@@ -209,6 +209,19 @@ export class PolineCard extends LitElement {
     return rgb.map((c) => c.toString(16).padStart(2, '0')).join('');
   }
 
+  private _toggleInvertLightness(): void {
+    if (!this._poline) return;
+    
+    this._poline.invertedLightness = !this._poline.invertedLightness;
+    
+    // Update the picker
+    if (this._picker) {
+      this._picker.setPoline(this._poline);
+    }
+    
+    this.requestUpdate();
+  }
+
 
 
   static styles = css`
@@ -296,6 +309,28 @@ export class PolineCard extends LitElement {
       opacity: 0.9;
     }
 
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px;
+    }
+
+    .toggle-group label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .toggle-group input[type="checkbox"] {
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+    }
+
     .info-text {
       font-size: 12px;
       color: var(--secondary-text-color);
@@ -316,7 +351,7 @@ export class PolineCard extends LitElement {
         ${this._config.title ? html`<div class="card-header">${this._config.title}</div>` : ''}
 
         <div class="picker-container">
-          <poline-picker interactive allow-add-points></poline-picker>
+          <poline-picker interactive></poline-picker>
         </div>
 
         <div class="palette-container">
@@ -333,6 +368,17 @@ export class PolineCard extends LitElement {
         </div>
 
         <div class="controls">
+          <div class="toggle-group">
+            <label>
+              <input
+                type="checkbox"
+                .checked=${this._poline?.invertedLightness || false}
+                @change=${this._toggleInvertLightness}
+              />
+              Invert Lightness
+            </label>
+          </div>
+
           ${this._config.wled_entity
             ? html`
                 <div class="button-group">
