@@ -17,6 +17,7 @@ interface PolineCardConfig extends LovelaceCardConfig {
   invert_lightness?: boolean;
   mode?: 'single' | 'palette';
   wled_entity?: string;
+  wled_entities?: string[];
   palette_size?: number;
 }
 
@@ -135,26 +136,56 @@ export class PolineCard extends LitElement {
   private _applyColorToEntity(colorIndex: number): void {
     if (!this.hass || !this._poline) return;
 
-    const color = this._poline.colors[colorIndex];
-    const [h, s, l] = color as [number, number, number];
-
-    // Convert HSL to RGB for Home Assistant
-    const rgb = this._hslToRgb(h, s, l);
-
     const entity = this._config?.entity;
     const entities = this._config?.entities || (entity ? [entity] : []);
+    
+    if (entities.length === 0) return;
 
-    entities.forEach((entityId) => {
-      this.hass!.callService('light', 'turn_on', {
-        entity_id: entityId,
+    // If single entity or single color mode, apply the selected color to all
+    if (entities.length === 1) {
+      const color = this._poline.colors[colorIndex];
+      const [h, s, l] = color as [number, number, number];
+      const rgb = this._hslToRgb(h, s, l);
+
+      this.hass.callService('light', 'turn_on', {
+        entity_id: entities[0],
         rgb_color: rgb,
         brightness: Math.round(l * 255),
       });
-    });
+    } else {
+      // Multiple entities: distribute palette colors across them
+      const totalColors = this._poline.colors.length;
+      const colorIndices: number[] = [];
+      
+      // Calculate evenly distributed indices
+      for (let i = 0; i < entities.length; i++) {
+        const position = i / (entities.length - 1);
+        const index = Math.round(position * (totalColors - 1));
+        colorIndices.push(index);
+      }
+
+      // Apply colors to each entity
+      entities.forEach((entityId, i) => {
+        const color = this._poline!.colors[colorIndices[i]];
+        const [h, s, l] = color as [number, number, number];
+        const rgb = this._hslToRgb(h, s, l);
+
+        this.hass!.callService('light', 'turn_on', {
+          entity_id: entityId,
+          rgb_color: rgb,
+          brightness: Math.round(l * 255),
+        });
+      });
+    }
   }
 
   private _applyPaletteToWled(): void {
-    if (!this.hass || !this._poline || !this._config?.wled_entity) return;
+    if (!this.hass || !this._poline || !this._config) return;
+
+    const wledEntity = this._config.wled_entity;
+    const wledEntities = this._config.wled_entities || (wledEntity ? [wledEntity] : []);
+    
+    if (wledEntities.length === 0) return;
 
     const paletteSize = this._config.palette_size || 16;
     const colors: number[][] = [];
@@ -171,10 +202,12 @@ export class PolineCard extends LitElement {
     // Format for WLED: convert to hex string
     const paletteString = colors.map((rgb) => this._rgbToHex(rgb)).join(',');
 
-    // Call WLED service to set custom palette
-    this.hass.callService('wled', 'preset', {
-      entity_id: this._config.wled_entity,
-      palette: paletteString,
+    // Apply to all WLED entities
+    wledEntities.forEach((entityId) => {
+      this.hass!.callService('wled', 'preset', {
+        entity_id: entityId,
+        palette: paletteString,
+      });
     });
   }
 
@@ -379,7 +412,7 @@ export class PolineCard extends LitElement {
             </label>
           </div>
 
-          ${this._config.wled_entity
+          ${this._config.wled_entity || this._config.wled_entities?.length
             ? html`
                 <div class="button-group">
                   <button @click=${this._applyPaletteToWled}>Apply Palette to WLED</button>
