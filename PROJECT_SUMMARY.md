@@ -38,8 +38,10 @@ poline-homeassistant/
 
 ### 1. Core Functionality
 - ✅ Integration with Poline library v0.11.0
-- ✅ Interactive color palette generation
-- ✅ Real-time color preview with swatchs
+- ✅ Poline-picker web component integration
+- ✅ Interactive color wheel with draggable anchor points
+- ✅ Real-time color palette updates
+- ✅ Click-to-add anchor points on the wheel
 - ✅ Configurable anchor points (2+)
 - ✅ Multiple position function support
 - ✅ Closed loop palette option
@@ -56,11 +58,12 @@ poline-homeassistant/
 
 ### 3. User Interface
 - ✅ Responsive card layout
-- ✅ Color swatch grid
-- ✅ Interactive anchor color pickers
-- ✅ Add/remove anchor controls
+- ✅ Interactive poline-picker color wheel
+- ✅ Draggable anchor points
+- ✅ Click-to-add anchor functionality
+- ✅ Color swatch grid for quick selection
 - ✅ Visual selection indicators
-- ✅ Hover effects and transitions
+- ✅ Smooth real-time updates
 - ✅ Mobile-friendly design
 
 ### 4. Developer Experience
@@ -90,11 +93,13 @@ The card supports extensive configuration through YAML:
 ## Usage Modes
 
 ### Single Color Mode
+- Drag anchors on the color wheel to adjust palette
 - Click any color swatch to apply immediately
 - Updates all configured light entities
-- Perfect for interactive color selection
+- Perfect for interactive color exploration
 
 ### Palette Mode (WLED)
+- Drag anchors to create custom palettes
 - Generates evenly-spaced palette
 - Sends entire palette to WLED device
 - Ideal for LED strip effects

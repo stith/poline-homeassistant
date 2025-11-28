@@ -1,5 +1,5 @@
 import { LitElement, html, css, PropertyValues } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, state, query } from 'lit/decorators.js';
 import { Poline, positionFunctions } from 'poline';
 import type { HomeAssistant, LovelaceCardConfig } from './types';
 
@@ -25,8 +25,8 @@ export class PolineCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: PolineCardConfig;
   @state() private _poline?: Poline;
-  @state() private _selectedAnchorIndex: number = 0;
   @state() private _selectedColorIndex: number = 0;
+  @query('poline-picker') private _picker?: HTMLElement & { setPoline: (poline: Poline) => void };
 
   static getStubConfig(): PolineCardConfig {
     return {
@@ -94,6 +94,34 @@ export class PolineCard extends LitElement {
     super.updated(changedProps);
     if (changedProps.has('_config') && this._config) {
       this._initializePoline();
+    }
+  }
+
+  protected firstUpdated(): void {
+    // Load the poline-picker web component
+    this._loadPickerComponent();
+  }
+
+  private async _loadPickerComponent(): Promise<void> {
+    try {
+      // Dynamically import the picker module
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await import('https://unpkg.com/poline/dist/picker.mjs' as any);
+      
+      // Set up the picker after it's been rendered
+      if (this._picker && this._poline) {
+        this._picker.setPoline(this._poline);
+      }
+
+      // Listen for changes from the picker
+      this._picker?.addEventListener('poline-change', ((event: CustomEvent) => {
+        if (event.detail?.poline) {
+          this._poline = event.detail.poline;
+          this.requestUpdate();
+        }
+      }) as EventListener);
+    } catch (error) {
+      console.error('Failed to load poline-picker component:', error);
     }
   }
 
@@ -181,92 +209,11 @@ export class PolineCard extends LitElement {
     return rgb.map((c) => c.toString(16).padStart(2, '0')).join('');
   }
 
-  private _addAnchor(): void {
-    if (!this._poline) return;
 
-    const randomColor: [number, number, number] = [
-      Math.random() * 360,
-      0.5 + Math.random() * 0.5,
-      0.4 + Math.random() * 0.4,
-    ];
-
-    this._poline.addAnchorPoint({ color: randomColor });
-    this._selectedAnchorIndex = this._poline.anchorPoints.length - 1;
-    this.requestUpdate();
-  }
-
-  private _removeAnchor(): void {
-    if (!this._poline || this._poline.anchorPoints.length <= 2) return;
-
-    this._poline.removeAnchorPoint({ index: this._selectedAnchorIndex });
-    this._selectedAnchorIndex = Math.max(0, this._selectedAnchorIndex - 1);
-    this.requestUpdate();
-  }
-
-  private _handleAnchorColorChange(event: Event): void {
-    if (!this._poline) return;
-
-    const input = event.target as HTMLInputElement;
-    const hexColor = input.value;
-
-    // Convert hex to HSL
-    const rgb = this._hexToRgb(hexColor);
-    const hsl = this._rgbToHsl(rgb[0], rgb[1], rgb[2]);
-
-    this._poline.updateAnchorPoint({ pointIndex: this._selectedAnchorIndex, color: hsl });
-    this.requestUpdate();
-  }
-
-  private _hexToRgb(hex: string): [number, number, number] {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result
-      ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
-      : [0, 0, 0];
-  }
-
-  private _rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-    r /= 255;
-    g /= 255;
-    b /= 255;
-
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h = 0;
-    let s = 0;
-    const l = (max + min) / 2;
-
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-      switch (max) {
-        case r:
-          h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-          break;
-        case g:
-          h = ((b - r) / d + 2) / 6;
-          break;
-        case b:
-          h = ((r - g) / d + 4) / 6;
-          break;
-      }
-    }
-
-    return [h * 360, s, l];
-  }
-
-  private _getAnchorColorAsHex(index: number): string {
-    if (!this._poline || !this._poline.anchorPoints[index]) return '#000000';
-
-    const [h, s, l] = this._poline.anchorPoints[index].hsl;
-    const rgb = this._hslToRgb(h, s, l);
-    return '#' + this._rgbToHex(rgb);
-  }
 
   static styles = css`
     :host {
       display: block;
-      padding: 16px;
     }
 
     ha-card {
@@ -279,11 +226,26 @@ export class PolineCard extends LitElement {
       margin-bottom: 16px;
     }
 
+    .picker-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    poline-picker {
+      width: 100%;
+      max-width: 400px;
+      height: 400px;
+      --poline-picker-bg-color: var(--card-background-color, #fff);
+      --poline-picker-line-color: var(--primary-text-color, #333);
+    }
+
     .palette-container {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 16px;
+      justify-content: center;
     }
 
     .color-swatch {
@@ -302,7 +264,7 @@ export class PolineCard extends LitElement {
 
     .color-swatch.selected {
       border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px var(--primary-background-color);
+      box-shadow: 0 0 0 2px var(--card-background-color);
     }
 
     .controls {
@@ -312,40 +274,17 @@ export class PolineCard extends LitElement {
       margin-top: 16px;
     }
 
-    .anchor-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .anchor-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: var(--secondary-background-color);
-      border-radius: 8px;
-    }
-
-    .anchor-color-input {
-      width: 50px;
-      height: 30px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
     .button-group {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      justify-content: center;
     }
 
     button {
       padding: 8px 16px;
       background: var(--primary-color);
-      color: var(--primary-text-color);
+      color: var(--text-primary-color, #fff);
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -357,20 +296,11 @@ export class PolineCard extends LitElement {
       opacity: 0.9;
     }
 
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .secondary-button {
-      background: var(--secondary-background-color);
-      color: var(--primary-text-color);
-    }
-
     .info-text {
       font-size: 12px;
       color: var(--secondary-text-color);
       margin-top: 8px;
+      text-align: center;
     }
   `;
 
@@ -385,9 +315,13 @@ export class PolineCard extends LitElement {
       <ha-card>
         ${this._config.title ? html`<div class="card-header">${this._config.title}</div>` : ''}
 
+        <div class="picker-container">
+          <poline-picker interactive allow-add-points></poline-picker>
+        </div>
+
         <div class="palette-container">
           ${colors.map(
-            (color, index) => html`
+            (color: string, index: number) => html`
               <div
                 class="color-swatch ${index === this._selectedColorIndex ? 'selected' : ''}"
                 style="background-color: ${color}"
@@ -399,34 +333,6 @@ export class PolineCard extends LitElement {
         </div>
 
         <div class="controls">
-          <div class="anchor-controls">
-            <span>Anchors:</span>
-            ${this._poline.anchorPoints.map(
-              (_: unknown, index: number) => html`
-                <div class="anchor-item">
-                  <input
-                    type="color"
-                    class="anchor-color-input"
-                    .value=${this._getAnchorColorAsHex(index)}
-                    @change=${this._handleAnchorColorChange}
-                    @click=${() => (this._selectedAnchorIndex = index)}
-                  />
-                  <span>${index + 1}</span>
-                </div>
-              `
-            )}
-          </div>
-
-          <div class="button-group">
-            <button @click=${this._addAnchor}>Add Anchor</button>
-            <button
-              @click=${this._removeAnchor}
-              ?disabled=${this._poline.anchorPoints.length <= 2}
-            >
-              Remove Anchor
-            </button>
-          </div>
-
           ${this._config.wled_entity
             ? html`
                 <div class="button-group">
@@ -437,8 +343,8 @@ export class PolineCard extends LitElement {
 
           <div class="info-text">
             ${this._config.mode === 'single'
-              ? 'Click a color to apply it to your lights'
-              : 'Click "Apply Palette" to send colors to WLED'}
+              ? 'Drag anchor points on the wheel • Click colors to apply to lights'
+              : 'Drag anchor points on the wheel • Click "Apply Palette" to send to WLED'}
           </div>
         </div>
       </ha-card>

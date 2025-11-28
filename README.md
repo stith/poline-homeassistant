@@ -8,9 +8,10 @@ A beautiful and interactive color picker for Home Assistant based on the [Poline
 ## Features
 
 - 🎨 **Beautiful Color Palettes**: Generate harmonious color palettes using Poline's polar coordinate algorithm
+- 🎡 **Interactive Color Wheel**: Drag and manipulate anchor points on a visual color wheel (powered by poline-picker)
 - 💡 **Smart Light Control**: Apply colors to any Home Assistant light entity (Philips Hue, LIFX, etc.)
 - 🌈 **WLED Integration**: Send entire color palettes to WLED devices
-- ⚡ **Interactive UI**: Click colors to apply instantly, adjust anchor points on the fly
+- ⚡ **Real-time Updates**: See your palette change as you drag anchor points
 - 🔧 **Highly Customizable**: Configure anchor colors, position functions, number of points, and more
 - 📱 **Responsive Design**: Works great on mobile and desktop
 
@@ -141,11 +142,17 @@ anchor_colors:
 
 ## Interactive Controls
 
-- **Click a color swatch**: Apply that color to configured light entities
-- **Click an anchor color picker**: Change an anchor color
-- **Add Anchor button**: Add a new random anchor point
-- **Remove Anchor button**: Remove the last selected anchor (minimum 2 required)
-- **Apply Palette to WLED**: Send the entire palette to a WLED device
+- **Drag anchor points** on the color wheel to adjust palette colors in real-time
+- **Click empty space** on the wheel to add new anchor points
+- **Click a color swatch** below the wheel to apply that color to your lights instantly
+- **Apply Palette to WLED** button sends the entire palette to WLED devices
+
+### Tips
+
+1. **Start simple**: Use 2-3 anchors for cohesive palettes
+2. **Experiment with position**: Try different position functions for varied effects
+3. **Drag to explore**: Move anchor points around the wheel to discover new color combinations
+4. **Add points interactively**: Click on the wheel to add anchors exactly where you want them
 
 ## Examples
 

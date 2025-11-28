@@ -83,18 +83,17 @@ num_points: 5
 
 ### Interactive Controls
 
+- **Drag anchor points** → Move colors around the color wheel in real-time
+- **Click empty space on wheel** → Add new anchor points
 - **Click a color swatch** → Applies color to your lights instantly
-- **Click anchor color picker** → Adjust anchor colors
-- **Add Anchor button** → Add new random anchor point
-- **Remove Anchor button** → Remove selected anchor (min 2 required)
 - **Apply Palette to WLED** → Send entire palette to WLED device
 
 ### Tips
 
 1. **Start simple**: Use 2-3 anchors for cohesive palettes
-2. **Experiment**: Try different position functions for varied effects
-3. **Save configs**: Keep good configurations in your dashboard YAML
-4. **Use themes**: Match anchor colors to your HA theme
+2. **Experiment**: Drag anchor points around the wheel for instant feedback
+3. **Add precisely**: Click anywhere on the wheel to place new anchor points
+4. **Use themes**: Match colors to your HA theme by adjusting anchors
 
 ## 5. Troubleshooting
 
