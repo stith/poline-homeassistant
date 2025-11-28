@@ -15,10 +15,21 @@ interface PolineCardConfig extends LovelaceCardConfig {
   position_function_z?: string;
   closed_loop?: boolean;
   invert_lightness?: boolean;
-  mode?: 'single' | 'palette';
   wled_entity?: string;
   wled_entities?: string[];
   palette_size?: number;
+  storage_entity?: string;
+}
+
+interface SavedPalette {
+  name: string;
+  anchorColors: [number, number, number][];
+  numPoints: number;
+  positionFunctionX?: string;
+  positionFunctionY?: string;
+  positionFunctionZ?: string;
+  closedLoop?: boolean;
+  invertedLightness?: boolean;
 }
 
 @customElement('poline-card')
@@ -27,6 +38,10 @@ export class PolineCard extends LitElement {
   @state() private _config?: PolineCardConfig;
   @state() private _poline?: Poline;
   @state() private _selectedColorIndex: number = 0;
+  @state() private _savedPalettes: SavedPalette[] = [];
+  @state() private _showSaveDialog: boolean = false;
+  @state() private _showLoadDialog: boolean = false;
+  @state() private _paletteName: string = '';
   @query('poline-picker') private _picker?: HTMLElement & { setPoline: (poline: Poline) => void };
 
   static getStubConfig(): PolineCardConfig {
@@ -34,7 +49,6 @@ export class PolineCard extends LitElement {
       type: 'custom:poline-card',
       title: 'Poline Color Picker',
       num_points: 4,
-      mode: 'single',
       palette_size: 16,
     };
   }
@@ -49,6 +63,80 @@ export class PolineCard extends LitElement {
 
   public getCardSize(): number {
     return 5;
+  }
+
+  private _getStorageKey(): string {
+    return `poline-card-${this._config?.type || 'default'}`;
+  }
+
+  private _saveState(): void {
+    if (!this.hass || !this._config) return;
+
+    const state = {
+      selectedColorIndex: this._selectedColorIndex,
+      invertedLightness: this._poline?.invertedLightness || false,
+    };
+
+    // Save to localStorage for cross-device sync via Home Assistant
+    try {
+      localStorage.setItem(this._getStorageKey(), JSON.stringify(state));
+    } catch (e) {
+      console.warn('Failed to save poline-card state:', e);
+    }
+  }
+
+  private _loadState(): void {
+    try {
+      const stored = localStorage.getItem(this._getStorageKey());
+      if (stored) {
+        const state = JSON.parse(stored);
+        
+        if (typeof state.selectedColorIndex === 'number') {
+          this._selectedColorIndex = state.selectedColorIndex;
+        }
+        
+        if (this._poline && typeof state.invertedLightness === 'boolean') {
+          this._poline.invertedLightness = state.invertedLightness;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load poline-card state:', e);
+    }
+    
+    // Load saved palettes from server
+    this._loadSavedPalettes();
+  }
+
+  private async _loadSavedPalettes(): Promise<void> {
+    if (!this.hass || !this._config?.storage_entity) return;
+
+    try {
+      const entity = this.hass.states[this._config.storage_entity];
+      if (entity?.attributes?.palettes) {
+        const palettesData = entity.attributes.palettes as string;
+        this._savedPalettes = JSON.parse(palettesData);
+      }
+    } catch (e) {
+      console.warn('Failed to load saved palettes:', e);
+    }
+  }
+
+  private async _savePalettesToServer(): Promise<void> {
+    if (!this.hass || !this._config?.storage_entity) return;
+
+    try {
+      const palettesJson = JSON.stringify(this._savedPalettes);
+      
+      // Use set_value service for input_text, or attributes for other helpers
+      await this.hass.callService('homeassistant', 'update_entity', {
+        entity_id: this._config.storage_entity,
+        attributes: {
+          palettes: palettesJson,
+        },
+      });
+    } catch (e) {
+      console.error('Failed to save palettes to server:', e);
+    }
   }
 
   private _initializePoline(): void {
@@ -89,6 +177,9 @@ export class PolineCard extends LitElement {
     if (this._config.invert_lightness !== undefined) {
       this._poline.invertedLightness = this._config.invert_lightness;
     }
+
+    // Load persisted state after initialization
+    this._loadState();
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -128,9 +219,7 @@ export class PolineCard extends LitElement {
 
   private _handleColorClick(index: number): void {
     this._selectedColorIndex = index;
-    if (this._config?.mode === 'single') {
-      this._applyColorToEntity(index);
-    }
+    this._saveState();
   }
 
   private _applyColorToEntity(colorIndex: number): void {
@@ -211,6 +300,87 @@ export class PolineCard extends LitElement {
     });
   }
 
+  private _applyColors(): void {
+    // Apply to regular light entities
+    this._applyColorToEntity(this._selectedColorIndex);
+    
+    // Apply to WLED entities
+    this._applyPaletteToWled();
+  }
+
+  private _openSaveDialog(): void {
+    this._paletteName = '';
+    this._showSaveDialog = true;
+  }
+
+  private _closeSaveDialog(): void {
+    this._showSaveDialog = false;
+    this._paletteName = '';
+  }
+
+  private _openLoadDialog(): void {
+    this._showLoadDialog = true;
+  }
+
+  private _closeLoadDialog(): void {
+    this._showLoadDialog = false;
+  }
+
+  private async _savePalette(): Promise<void> {
+    if (!this._poline || !this._paletteName.trim()) return;
+
+    const palette: SavedPalette = {
+      name: this._paletteName.trim(),
+      anchorColors: this._poline.anchorPoints.map(p => p.hsl),
+      numPoints: this._poline.numPoints,
+      positionFunctionX: this._config?.position_function_x,
+      positionFunctionY: this._config?.position_function_y,
+      positionFunctionZ: this._config?.position_function_z,
+      closedLoop: this._poline.closedLoop,
+      invertedLightness: this._poline.invertedLightness,
+    };
+
+    // Check if palette with same name exists
+    const existingIndex = this._savedPalettes.findIndex(p => p.name === palette.name);
+    if (existingIndex >= 0) {
+      this._savedPalettes[existingIndex] = palette;
+    } else {
+      this._savedPalettes = [...this._savedPalettes, palette];
+    }
+
+    await this._savePalettesToServer();
+    this._closeSaveDialog();
+  }
+
+  private async _loadPalette(palette: SavedPalette): Promise<void> {
+    if (!this._config) return;
+
+    // Update config with palette settings
+    this._config.anchor_colors = palette.anchorColors;
+    this._config.num_points = palette.numPoints;
+    this._config.position_function_x = palette.positionFunctionX;
+    this._config.position_function_y = palette.positionFunctionY;
+    this._config.position_function_z = palette.positionFunctionZ;
+    this._config.closed_loop = palette.closedLoop;
+    this._config.invert_lightness = palette.invertedLightness;
+
+    // Reinitialize poline with new settings
+    this._initializePoline();
+
+    // Update picker
+    if (this._picker && this._poline) {
+      this._picker.setPoline(this._poline);
+    }
+
+    this._closeLoadDialog();
+    this.requestUpdate();
+  }
+
+  private async _deletePalette(palette: SavedPalette): Promise<void> {
+    this._savedPalettes = this._savedPalettes.filter(p => p.name !== palette.name);
+    await this._savePalettesToServer();
+  }
+
   private _hslToRgb(h: number, s: number, l: number): [number, number, number] {
     h = h / 360;
 
@@ -252,6 +422,7 @@ export class PolineCard extends LitElement {
       this._picker.setPoline(this._poline);
     }
     
+    this._saveState();
     this.requestUpdate();
   }
 
@@ -370,6 +541,92 @@ export class PolineCard extends LitElement {
       margin-top: 8px;
       text-align: center;
     }
+
+    .dialog-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .dialog {
+      background: var(--card-background-color);
+      border-radius: 8px;
+      padding: 20px;
+      min-width: 300px;
+      max-width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .dialog-header {
+      font-size: 1.1em;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+
+    .dialog-content {
+      margin-bottom: 16px;
+    }
+
+    .dialog-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--divider-color);
+      border-radius: 4px;
+      background: var(--card-background-color);
+      color: var(--primary-text-color);
+      font-size: 14px;
+    }
+
+    .palette-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .palette-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: var(--secondary-background-color);
+      border-radius: 4px;
+    }
+
+    .palette-item-name {
+      flex: 1;
+      cursor: pointer;
+    }
+
+    .palette-item-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    button.secondary {
+      background: var(--secondary-background-color);
+      color: var(--primary-text-color);
+    }
+
+    button.danger {
+      background: var(--error-color, #f44336);
+      color: white;
+    }
   `;
 
   protected render() {
@@ -412,20 +669,92 @@ export class PolineCard extends LitElement {
             </label>
           </div>
 
-          ${this._config.wled_entity || this._config.wled_entities?.length
-            ? html`
-                <div class="button-group">
-                  <button @click=${this._applyPaletteToWled}>Apply Palette to WLED</button>
-                </div>
-              `
-            : ''}
+          <div class="button-group">
+            <button @click=${this._applyColors}>Apply</button>
+            ${this._config?.storage_entity
+              ? html`
+                  <button class="secondary" @click=${this._openSaveDialog}>Save Palette</button>
+                  <button class="secondary" @click=${this._openLoadDialog}>
+                    Load Palette (${this._savedPalettes.length})
+                  </button>
+                `
+              : ''}
+          </div>
 
           <div class="info-text">
-            ${this._config.mode === 'single'
-              ? 'Drag anchor points on the wheel • Click colors to apply to lights'
-              : 'Drag anchor points on the wheel • Click "Apply Palette" to send to WLED'}
+            Drag anchor points • Select a color • Click Apply to update lights
           </div>
         </div>
+
+        ${this._showSaveDialog
+          ? html`
+              <div class="dialog-overlay" @click=${this._closeSaveDialog}>
+                <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
+                  <div class="dialog-header">Save Palette</div>
+                  <div class="dialog-content">
+                    <input
+                      type="text"
+                      placeholder="Palette name"
+                      .value=${this._paletteName}
+                      @input=${(e: Event) =>
+                        (this._paletteName = (e.target as HTMLInputElement).value)}
+                      @keydown=${(e: KeyboardEvent) => {
+                        if (e.key === 'Enter') this._savePalette();
+                        if (e.key === 'Escape') this._closeSaveDialog();
+                      }}
+                    />
+                  </div>
+                  <div class="dialog-actions">
+                    <button class="secondary" @click=${this._closeSaveDialog}>Cancel</button>
+                    <button @click=${this._savePalette} ?disabled=${!this._paletteName.trim()}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `
+          : ''}
+
+        ${this._showLoadDialog
+          ? html`
+              <div class="dialog-overlay" @click=${this._closeLoadDialog}>
+                <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
+                  <div class="dialog-header">Load Palette</div>
+                  <div class="dialog-content">
+                    ${this._savedPalettes.length === 0
+                      ? html`<p>No saved palettes</p>`
+                      : html`
+                          <div class="palette-list">
+                            ${this._savedPalettes.map(
+                              (palette) => html`
+                                <div class="palette-item">
+                                  <div
+                                    class="palette-item-name"
+                                    @click=${() => this._loadPalette(palette)}
+                                  >
+                                    ${palette.name}
+                                  </div>
+                                  <div class="palette-item-actions">
+                                    <button
+                                      class="danger"
+                                      @click=${() => this._deletePalette(palette)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                              `
+                            )}
+                          </div>
+                        `}
+                  </div>
+                  <div class="dialog-actions">
+                    <button class="secondary" @click=${this._closeLoadDialog}>Close</button>
+                  </div>
+                </div>
+              </div>
+            `
+          : ''}
       </ha-card>
     `;
   }
