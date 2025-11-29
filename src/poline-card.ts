@@ -18,7 +18,6 @@ interface PolineCardConfig extends LovelaceCardConfig {
   wled_entity?: string;
   wled_entities?: string[];
   palette_size?: number;
-  storage_entity?: string;
 }
 
 interface SavedPalette {
@@ -38,8 +37,7 @@ export class PolineCard extends LitElement {
   @state() private _config?: PolineCardConfig;
   @state() private _poline?: Poline;
   @state() private _savedPalettes: SavedPalette[] = [];
-  @state() private _showSaveDialog: boolean = false;
-  @state() private _showLoadDialog: boolean = false;
+  @state() private _showPalettesDialog: boolean = false;
   @state() private _paletteName: string = '';
   @query('poline-picker') private _picker?: HTMLElement & { setPoline: (poline: Poline) => void };
 
@@ -102,31 +100,23 @@ export class PolineCard extends LitElement {
   }
 
   private async _loadSavedPalettes(): Promise<void> {
-    if (!this.hass || !this._config?.storage_entity) return;
-
     try {
-      const entity = this.hass.states[this._config.storage_entity];
-      if (entity?.state && entity.state !== 'unknown') {
-        this._savedPalettes = JSON.parse(entity.state);
+      const stored = localStorage.getItem('poline-saved-palettes');
+      if (stored) {
+        this._savedPalettes = JSON.parse(stored);
       }
     } catch (e) {
-      console.warn('Failed to load saved palettes:', e);
+      console.warn('Failed to load saved palettes from localStorage:', e);
     }
   }
 
-  private async _savePalettesToServer(): Promise<void> {
-    if (!this.hass || !this._config?.storage_entity) return;
-
+  private async _savePalettesToLocalStorage(): Promise<void> {
     try {
       const palettesJson = JSON.stringify(this._savedPalettes);
-      
-      // Use input_text.set_value service
-      await this.hass.callService('input_text', 'set_value', {
-        entity_id: this._config.storage_entity,
-        value: palettesJson,
-      });
+      localStorage.setItem('poline-saved-palettes', palettesJson);
     } catch (e) {
-      console.error('Failed to save palettes to server:', e);
+      console.error('Failed to save palettes to localStorage:', e);
+      alert('Failed to save palette to localStorage');
     }
   }
 
@@ -408,22 +398,14 @@ export class PolineCard extends LitElement {
     await this._applyPaletteToWled();
   }
 
-  private _openSaveDialog(): void {
+  private _openPalettesDialog(): void {
     this._paletteName = '';
-    this._showSaveDialog = true;
+    this._showPalettesDialog = true;
   }
 
-  private _closeSaveDialog(): void {
-    this._showSaveDialog = false;
+  private _closePalettesDialog(): void {
+    this._showPalettesDialog = false;
     this._paletteName = '';
-  }
-
-  private _openLoadDialog(): void {
-    this._showLoadDialog = true;
-  }
-
-  private _closeLoadDialog(): void {
-    this._showLoadDialog = false;
   }
 
   private async _savePalette(): Promise<void> {
@@ -448,8 +430,8 @@ export class PolineCard extends LitElement {
       this._savedPalettes = [...this._savedPalettes, palette];
     }
 
-    await this._savePalettesToServer();
-    this._closeSaveDialog();
+    await this._savePalettesToLocalStorage();
+    this._paletteName = '';
   }
 
   private async _loadPalette(palette: SavedPalette): Promise<void> {
@@ -475,13 +457,13 @@ export class PolineCard extends LitElement {
       this._picker.setPoline(this._poline);
     }
 
-    this._closeLoadDialog();
+    this._closePalettesDialog();
     this.requestUpdate();
   }
 
   private async _deletePalette(palette: SavedPalette): Promise<void> {
     this._savedPalettes = this._savedPalettes.filter(p => p.name !== palette.name);
-    await this._savePalettesToServer();
+    await this._savePalettesToLocalStorage();
   }
 
   private _hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -509,10 +491,6 @@ export class PolineCard extends LitElement {
     }
 
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-  }
-
-  private _rgbToHex(rgb: number[]): string {
-    return rgb.map((c) => c.toString(16).padStart(2, '0')).join('');
   }
 
   private _toggleInvertLightness(): void {
@@ -602,7 +580,7 @@ export class PolineCard extends LitElement {
     poline-picker {
       width: 100%;
       max-width: 350px;
-      height: 350px;
+      height: 310px;
       --poline-picker-bg-color: var(--card-background-color, #fff);
       --poline-picker-line-color: var(--primary-text-color, #333);
     }
@@ -617,16 +595,14 @@ export class PolineCard extends LitElement {
 
     .controls {
       display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 8px;
     }
 
     .button-group {
       display: flex;
+      align-items: center;
       gap: 8px;
-      flex-wrap: wrap;
-      justify-content: center;
     }
 
     button {
@@ -644,26 +620,20 @@ export class PolineCard extends LitElement {
       opacity: 0.9;
     }
 
-    .toggle-group {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 8px;
+    button.compact {
+      padding: 8px 12px;
+      font-size: 13px;
+      min-width: auto;
     }
 
-    .toggle-group label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      font-size: 14px;
+    button.active {
+      background: var(--primary-color);
+      color: var(--text-primary-color, #fff);
     }
 
-    .toggle-group input[type="checkbox"] {
-      cursor: pointer;
-      width: 18px;
-      height: 18px;
+    button.inactive {
+      background: var(--secondary-background-color);
+      color: var(--primary-text-color);
     }
 
     .info-text {
@@ -704,6 +674,11 @@ export class PolineCard extends LitElement {
 
     .dialog-content {
       margin-bottom: 16px;
+    }
+
+    .save-section {
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--divider-color);
     }
 
     .dialog-actions {
@@ -797,101 +772,83 @@ export class PolineCard extends LitElement {
         </div>
 
         <div class="controls">
-          <svg class="palette-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            ${svg`
-              <circle cx="50" cy="50" r="50" fill="#ffffff" />
-              ${colors.map((color: string, index: number) => {
-                const sliceAngle = 360 / colors.length;
-                const startAngle = index * sliceAngle - 90; // Start from top
-                const endAngle = startAngle + sliceAngle;
-                
-                // Convert to radians
-                const startRad = (startAngle * Math.PI) / 180;
-                const endRad = (endAngle * Math.PI) / 180;
-                
-                // Calculate arc points
-                const x1 = 50 + 50 * Math.cos(startRad);
-                const y1 = 50 + 50 * Math.sin(startRad);
-                const x2 = 50 + 50 * Math.cos(endRad);
-                const y2 = 50 + 50 * Math.sin(endRad);
-                
-                const largeArc = sliceAngle > 180 ? 1 : 0;
-                
-                return svg`
-                  <path
-                    d="M 50 50 L ${x1} ${y1} A 50 50 0 ${largeArc} 1 ${x2} ${y2} Z"
-                    fill="${color}"
-                  >
-                    <title>Color ${index + 1}</title>
-                  </path>
-                `;
-              })}
-            `}
-          </svg>
-
-          <div class="toggle-group">
-            <label>
-              <input
-                type="checkbox"
-                .checked=${this._poline?.invertedLightness || false}
-                @change=${this._toggleInvertLightness}
-              />
-              Invert Lightness
-            </label>
-          </div>
-
           <div class="button-group">
+            <svg class="palette-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              ${svg`
+                <circle cx="50" cy="50" r="50" fill="#ffffff" />
+                ${colors.map((color: string, index: number) => {
+                  const sliceAngle = 360 / colors.length;
+                  const startAngle = index * sliceAngle - 90; // Start from top
+                  const endAngle = startAngle + sliceAngle;
+                  
+                  // Convert to radians
+                  const startRad = (startAngle * Math.PI) / 180;
+                  const endRad = (endAngle * Math.PI) / 180;
+                  
+                  // Calculate arc points
+                  const x1 = 50 + 50 * Math.cos(startRad);
+                  const y1 = 50 + 50 * Math.sin(startRad);
+                  const x2 = 50 + 50 * Math.cos(endRad);
+                  const y2 = 50 + 50 * Math.sin(endRad);
+                  
+                  const largeArc = sliceAngle > 180 ? 1 : 0;
+                  
+                  return svg`
+                    <path
+                      d="M 50 50 L ${x1} ${y1} A 50 50 0 ${largeArc} 1 ${x2} ${y2} Z"
+                      fill="${color}"
+                    >
+                      <title>Color ${index + 1}</title>
+                    </path>
+                  `;
+                })}
+              `}
+            </svg>
             <button @click=${this._applyColors}>Apply</button>
-            ${this._config?.storage_entity
-              ? html`
-                  <button class="secondary" @click=${this._openSaveDialog}>Save Palette</button>
-                  <button class="secondary" @click=${this._openLoadDialog}>
-                    Load Palette (${this._savedPalettes.length})
-                  </button>
-                `
-              : ''}
+            <button class="secondary" @click=${this._openPalettesDialog}>
+              Saved Palettes (${this._savedPalettes.length})
+            </button>
+            <button 
+              class="compact ${this._poline?.invertedLightness ? 'inactive' : 'active'}"
+              @click=${this._toggleInvertLightness}
+              title="Invert Lightness"
+            >
+              ⬍
+            </button>
           </div>
         </div>
 
-        ${this._showSaveDialog
+        ${this._showPalettesDialog
           ? html`
-              <div class="dialog-overlay" @click=${this._closeSaveDialog}>
+              <div class="dialog-overlay" @click=${this._closePalettesDialog}>
                 <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
-                  <div class="dialog-header">Save Palette</div>
+                  <div class="dialog-header">Saved Palettes</div>
                   <div class="dialog-content">
-                    <input
-                      type="text"
-                      placeholder="Palette name"
-                      .value=${this._paletteName}
-                      @input=${(e: Event) =>
-                        (this._paletteName = (e.target as HTMLInputElement).value)}
-                      @keydown=${(e: KeyboardEvent) => {
-                        if (e.key === 'Enter') this._savePalette();
-                        if (e.key === 'Escape') this._closeSaveDialog();
-                      }}
-                    />
-                  </div>
-                  <div class="dialog-actions">
-                    <button class="secondary" @click=${this._closeSaveDialog}>Cancel</button>
-                    <button @click=${this._savePalette} ?disabled=${!this._paletteName.trim()}>
-                      Save
-                    </button>
-                  </div>
-                </div>
-              </div>
-            `
-          : ''}
-
-        ${this._showLoadDialog
-          ? html`
-              <div class="dialog-overlay" @click=${this._closeLoadDialog}>
-                <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
-                  <div class="dialog-header">Load Palette</div>
-                  <div class="dialog-content">
+                    <div class="save-section">
+                      <input
+                        type="text"
+                        placeholder="Enter palette name to save current"
+                        .value=${this._paletteName}
+                        @input=${(e: Event) =>
+                          (this._paletteName = (e.target as HTMLInputElement).value)}
+                        @keydown=${(e: KeyboardEvent) => {
+                          if (e.key === 'Enter' && this._paletteName.trim()) this._savePalette();
+                          if (e.key === 'Escape') this._closePalettesDialog();
+                        }}
+                      />
+                      <button 
+                        @click=${this._savePalette} 
+                        ?disabled=${!this._paletteName.trim()}
+                        style="margin-top: 8px;"
+                      >
+                        Save Current Palette
+                      </button>
+                    </div>
+                    
                     ${this._savedPalettes.length === 0
-                      ? html`<p>No saved palettes</p>`
+                      ? html`<p style="margin-top: 16px; color: var(--secondary-text-color);">No saved palettes yet</p>`
                       : html`
-                          <div class="palette-list">
+                          <div class="palette-list" style="margin-top: 16px;">
                             ${this._savedPalettes.map(
                               (palette) => html`
                                 <div class="palette-item">
@@ -928,7 +885,7 @@ export class PolineCard extends LitElement {
                         `}
                   </div>
                   <div class="dialog-actions">
-                    <button class="secondary" @click=${this._closeLoadDialog}>Close</button>
+                    <button class="secondary" @click=${this._closePalettesDialog}>Close</button>
                   </div>
                 </div>
               </div>
