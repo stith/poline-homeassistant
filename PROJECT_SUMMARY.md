@@ -1,226 +1,68 @@
 # Poline HomeAssistant - Project Summary
 
 ## Overview
-This project implements the Poline color picker as a Home Assistant Custom Element (Lovelace card) with HACS compatibility. It allows users to generate beautiful color palettes and apply them to smart lights and WLED devices.
+Home Assistant custom card that integrates the Poline color picker library. Generate harmonious color palettes and apply them to smart lights and WLED devices.
 
-## Technology Stack
-- **TypeScript** - Modern, type-safe development
-- **Lit** - Lightweight web components framework
-- **Poline** - Color palette generation library
-- **Rollup** - Module bundler with tree-shaking
-- **ESLint & Prettier** - Code quality and formatting
+## Tech Stack
+- TypeScript 5.3.3 (strict mode)
+- Lit 3.1.2 (web components)
+- Poline 0.11.0 (color generation)
+- Rollup (bundler)
 
-## Project Structure
-
-```
-poline-homeassistant/
-├── .github/
-│   └── workflows/
-│       └── build.yml          # CI/CD for automated releases
-├── src/
-│   ├── poline-card.ts         # Main custom element implementation
-│   └── types.ts               # TypeScript type definitions
-├── dist/                      # Compiled output (generated)
-│   └── poline-card.js         # Bundled JavaScript file
-├── hacs.json                  # HACS integration manifest
-├── info.md                    # HACS info page
-├── package.json               # Node.js dependencies
-├── tsconfig.json              # TypeScript configuration
-├── rollup.config.mjs          # Build configuration
-├── .eslintrc.json            # Linting rules
-├── .prettierrc.json          # Code formatting rules
-├── examples.yaml              # Usage examples
-├── README.md                  # Full documentation
-└── LICENSE                    # MIT License
-```
-
-## Key Features Implemented
-
-### 1. Core Functionality
-- ✅ Integration with Poline library v0.11.0
-- ✅ Poline-picker web component integration
-- ✅ Interactive color wheel with draggable anchor points
-- ✅ Real-time color palette updates
-- ✅ Click-to-add anchor points on the wheel
-- ✅ Configurable anchor points (2+)
-- ✅ Multiple position function support
-- ✅ Closed loop palette option
-- ✅ Inverted lightness option
-
-### 2. Home Assistant Integration
-- ✅ Custom Lovelace card element
-- ✅ HACS compatible structure
-- ✅ Light entity control (Hue, LIFX, generic RGB)
-- ✅ Multi-entity support
-- ✅ WLED palette integration
-- ✅ HSL to RGB color conversion
-- ✅ Service call integration
-
-### 3. User Interface
-- ✅ Responsive card layout
-- ✅ Interactive poline-picker color wheel
-- ✅ Draggable anchor points
-- ✅ Click-to-add anchor functionality
-- ✅ Color swatch grid for quick selection
-- ✅ Visual selection indicators
-- ✅ Smooth real-time updates
-- ✅ Mobile-friendly design
-
-### 4. Developer Experience
-- ✅ Full TypeScript typing
-- ✅ Modern ES2020+ JavaScript
-- ✅ Automated build pipeline
-- ✅ Source maps for debugging
-- ✅ Code linting and formatting
-- ✅ GitHub Actions CI/CD
-
-## Configuration Options
-
-The card supports extensive configuration through YAML:
-
-| Option | Type | Purpose |
-|--------|------|---------|
-| `entity/entities` | string/list | Light entities to control |
-| `num_points` | number | Colors between anchors |
-| `anchor_colors` | HSL array | Starting anchor points |
-| `position_function_*` | string | Interpolation curves |
-| `closed_loop` | boolean | Palette wraps around |
-| `invert_lightness` | boolean | Lightness distribution |
-| `wled_entity` | string | WLED device for palettes |
-| `palette_size` | number | WLED palette length |
-| `mode` | string | Single color or palette mode |
-
-## Usage Modes
-
-### Single Color Mode
-- Drag anchors on the color wheel to adjust palette
-- Click any color swatch to apply immediately
-- Updates all configured light entities
-- Perfect for interactive color exploration
-
-### Palette Mode (WLED)
-- Drag anchors to create custom palettes
-- Generates evenly-spaced palette
-- Sends entire palette to WLED device
-- Ideal for LED strip effects
-
-## Color Conversion Pipeline
+## Structure
 
 ```
-Poline (HSL polar) → RGB → Home Assistant Services
-     ↓
-WLED Hex Palette
+src/
+├── poline-card.ts         # Main card element
+├── poline-card-editor.ts  # Visual config editor
+└── types.ts               # TypeScript types
+dist/
+└── poline-card.js         # Bundled output
 ```
 
-1. Poline generates colors in HSL (0-360, 0-1, 0-1)
-2. HSL converted to RGB (0-255, 0-255, 0-255)
-3. RGB sent to lights via `light.turn_on` service
-4. For WLED: RGB → Hex → palette string
+## Features
 
-## Build Process
+- Interactive color wheel with draggable anchor points
+- Click to add anchor points
+- Save/load palettes (stored in input_text entities)
+- Apply colors to multiple light entities
+- Upload palettes to WLED devices
+- Visual configuration editor
+- 9 position functions for color distribution
+- Closed loop and inverted lightness options
+
+## Configuration
+
+Requires two `input_text` helpers for persistence:
+- State storage (max 255 chars)
+- Saved palettes storage (max 255 chars)
+
+Card config via visual editor or YAML:
+- Light entities
+- WLED entities
+- Palette size (2-256 for WLED)
+- Number of points (colors between anchors)
+- Position functions (X/Y/Z)
+- Closed loop / invert lightness toggles
+
+## How It Works
+
+1. Poline generates colors in HSL polar coordinates
+2. Colors converted to RGB (0-255)
+3. Applied to lights via `light.turn_on` service
+4. For WLED: RGB → Hex string → uploaded to device
+5. State saved to input_text entities (JSON, rounded to 2 decimals)
+
+## Build
 
 ```bash
-# Development
-npm install          # Install dependencies
-npm run watch        # Watch mode for development
-npm run lint         # Check code quality
-
-# Production
-npm run build        # Create optimized bundle
+npm install
+npm run build    # Output: dist/poline-card.js
+npm run watch    # Development mode
 ```
 
-Output: `dist/poline-card.js` (~32KB minified)
+## HACS Compatible
 
-## HACS Installation
-
-1. Add as custom repository in HACS
-2. Install from Frontend category
-3. Add resource to Lovelace
-4. Add card to dashboard
-
-## Future Enhancement Ideas
-
-- [ ] Save/load custom palettes
-- [ ] Export palettes to file
-- [ ] Preset palette library
-- [ ] Animation/transition effects
-- [ ] Color harmony suggestions
-- [ ] Accessibility improvements
-- [ ] Theme integration
-- [ ] Multi-language support
-
-## Technical Highlights
-
-### Type Safety
-Full TypeScript coverage ensures:
-- Correct Home Assistant API usage
-- Proper Poline library integration
-- Compile-time error detection
-
-### Performance
-- Efficient Lit-based rendering
-- Minimal re-renders with reactive properties
-- Tree-shaken dependencies
-- Minified production bundle
-
-### Compatibility
-- Works with any RGB-capable lights
-- Hue integration via HA light platform
-- WLED via custom palette service
-- Modern browser support (ES2020+)
-
-## Code Quality
-
-- ESLint for code consistency
-- Prettier for formatting
-- TypeScript strict mode
-- Proper error handling
-- Clear naming conventions
-
-## License & Credits
-
-**License:** MIT
-
-**Based on Poline by Meo Dai**
-- Library: https://github.com/meodai/poline
-- Website: https://meodai.github.io/poline/
-- Inspired by Anatoly Zenkov's color palette ideas
-
-## Next Steps for Users
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Build the project:**
-   ```bash
-   npm run build
-   ```
-
-3. **Test in Home Assistant:**
-   - Copy `dist/poline-card.js` to `config/www/`
-   - Add resource in Lovelace
-   - Create test card with your lights
-
-4. **Publish to GitHub:**
-   - Initialize git repository
-   - Push to GitHub
-   - Add to HACS (create PR or add custom repo)
-
-5. **Create releases:**
-   - Tag versions (v1.0.0, etc.)
-   - GitHub Actions will build automatically
-   - Users can update via HACS
-
-## Contact & Contributions
-
-This is an open-source project. Contributions welcome via:
-- Bug reports
-- Feature requests
-- Pull requests
-- Documentation improvements
-
----
-
-**Built with ❤️ for the Home Assistant community**
+- `hacs.json` manifest
+- Release workflow
+- Proper file structure

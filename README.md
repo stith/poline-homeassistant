@@ -1,39 +1,33 @@
 # Poline Color Picker for Home Assistant
 
-A beautiful and interactive color picker for Home Assistant based on the [Poline](https://meodai.github.io/poline/) color palette generator. This custom card generates stunning color palettes using polar coordinates and allows you to apply them to your smart lights and WLED devices.
+Generate beautiful color palettes for your smart lights using [Poline](https://meodai.github.io/poline/). Drag colors around an interactive wheel, save your favorite palettes, and apply them to any RGB light or WLED device.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![HACS](https://img.shields.io/badge/HACS-compatible-green.svg)
 
-## Features
+## What This Does
 
-- 🎨 **Beautiful Color Palettes**: Generate harmonious color palettes using Poline's polar coordinate algorithm
-- 🎡 **Interactive Color Wheel**: Drag and manipulate anchor points on a visual color wheel (powered by poline-picker)
-- 💡 **Smart Light Control**: Apply colors to any Home Assistant light entity (Philips Hue, LIFX, etc.)
-- 🌈 **WLED Integration**: Send entire color palettes to WLED devices
-- ⚡ **Real-time Updates**: See your palette change as you drag anchor points
-- 🔧 **Highly Customizable**: Configure anchor colors, position functions, number of points, and more
-- 📱 **Responsive Design**: Works great on mobile and desktop
+- Drag anchor points on a color wheel to create harmonious palettes
+- Click any generated color to apply it to your lights instantly
+- Save palettes and reload them later
+- Send entire palettes to WLED devices
+- Configure position functions for different color distributions
 
 ## Installation
 
 ### HACS (Recommended)
 
-1. Open HACS in your Home Assistant instance
-2. Click on "Frontend"
-3. Click the three dots menu in the top right
-4. Select "Custom repositories"
-5. Add this repository URL: `https://github.com/yourusername/poline-homeassistant`
-6. Select category "Lovelace"
-7. Click "Add"
-8. Find "Poline Color Picker Card" in the list and click "Download"
-9. Restart Home Assistant
+1. Open HACS → Frontend
+2. Click the menu (⋮) → Custom repositories
+3. Add repository URL and select "Lovelace" category
+4. Find "Poline Color Picker Card" and click Download
+5. Restart Home Assistant
 
 ### Manual Installation
 
-1. Download the `poline-card.js` file from the [latest release](https://github.com/yourusername/poline-homeassistant/releases)
-2. Copy it to your `config/www` folder
-3. Add the following to your Lovelace resources:
+1. Download `poline-card.js` from the [latest release](https://github.com/stith/poline-homeassistant/releases)
+2. Copy to `config/www/poline-card.js`
+3. Add to Lovelace resources:
 
 ```yaml
 resources:
@@ -43,55 +37,45 @@ resources:
 
 4. Restart Home Assistant
 
-## Usage
+## Setup
 
-### Basic Configuration
+### Required: Create Storage Helpers
 
-Add the card to your Lovelace dashboard:
+The card needs two `input_text` helpers to save state and palettes. Add these to your `configuration.yaml`:
 
+```yaml
+input_text:
+  poline_card_state:
+    name: Poline Card State
+    max: 255
+  poline_saved_palettes:
+    name: Poline Saved Palettes
+    max: 255
+```
+
+Restart Home Assistant after adding these.
+
+### Add the Card
+
+**Using the Visual Editor (Easiest):**
+1. Edit your dashboard
+2. Add Card → Search for "Poline"
+3. Fill in the configuration form:
+   - Add your light entities
+   - Add WLED entities (optional)
+   - Select the storage helpers you created
+   - Configure palette size and number of points
+
+**Using YAML:**
 ```yaml
 type: custom:poline-card
 title: Color Picker
-entity: light.bedroom_lamp
-mode: single
-```
-
-### Advanced Configuration
-
-```yaml
-type: custom:poline-card
-title: My Color Palette
 entities:
-  - light.living_room
   - light.bedroom
-  - light.kitchen
-num_points: 6
-anchor_colors:
-  - [30, 0.8, 0.6]   # Orange-ish [Hue, Saturation, Lightness]
-  - [210, 0.7, 0.5]  # Blue-ish
-  - [330, 0.6, 0.5]  # Pink-ish
-position_function_x: sinusoidalPosition
-position_function_y: quadraticPosition
-position_function_z: linearPosition
-closed_loop: false
-invert_lightness: false
-mode: single
-```
-
-### WLED Configuration
-
-To use with WLED devices:
-
-```yaml
-type: custom:poline-card
-title: WLED Palette
-wled_entity: light.wled_strip
-mode: palette
+storage_state_entity: input_text.poline_card_state
+storage_palettes_entity: input_text.poline_saved_palettes
 palette_size: 16
 num_points: 4
-anchor_colors:
-  - [0, 0.9, 0.5]    # Red
-  - [240, 0.9, 0.5]  # Blue
 ```
 
 ## Configuration Options
@@ -99,199 +83,137 @@ anchor_colors:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `type` | string | **Required** | Must be `custom:poline-card` |
-| `title` | string | _none_ | Card title |
-| `entity` | string | _none_ | Single light entity to control |
-| `entities` | list | _none_ | Multiple light entities to control |
-| `mode` | string | `single` | `single` for individual colors, `palette` for WLED |
-| `num_points` | number | `4` | Number of color points between each anchor pair |
-| `anchor_colors` | list | _auto_ | List of anchor colors in HSL format `[hue, saturation, lightness]` |
-| `position_function_x` | string | `sinusoidalPosition` | Position function for X axis (hue/lightness) |
-| `position_function_y` | string | `quadraticPosition` | Position function for Y axis (hue/lightness) |
-| `position_function_z` | string | `linearPosition` | Position function for Z axis (saturation) |
-| `closed_loop` | boolean | `false` | Whether the palette forms a closed loop |
-| `invert_lightness` | boolean | `false` | Invert the lightness distribution |
-| `wled_entity` | string | _none_ | WLED entity for palette mode |
+| `title` | string | `Poline Color Picker` | Card title |
+| `entities` | list | `[]` | Light entities to control |
+| `wled_entities` | list | `[]` | WLED devices for palette upload |
+| `num_points` | number | `4` | Colors between anchor points |
 | `palette_size` | number | `16` | Number of colors in WLED palette |
+| `position_function_x` | string | `sinusoidalPosition` | Hue distribution curve |
+| `position_function_y` | string | `quadraticPosition` | Lightness distribution curve |
+| `position_function_z` | string | `linearPosition` | Saturation distribution curve |
+| `closed_loop` | boolean | `false` | Connect last color to first |
+| `invert_lightness` | boolean | `false` | Invert lightness values |
+| `storage_state_entity` | string | _none_ | input_text for card state |
+| `storage_palettes_entity` | string | _none_ | input_text for saved palettes |
 
 ### Position Functions
 
-Available position functions (from Poline):
-- `linearPosition` - Linear interpolation
+These control how colors are distributed between anchor points:
+- `linearPosition` - Straight interpolation
 - `exponentialPosition` - Exponential curve
-- `quadraticPosition` - Quadratic curve
+- `quadraticPosition` - Quadratic curve  
 - `cubicPosition` - Cubic curve
 - `quarticPosition` - Quartic curve
-- `sinusoidalPosition` - Sinusoidal curve (default)
-- `asinusoidalPosition` - Inverse sinusoidal
+- `sinusoidalPosition` - Sinusoidal wave
+- `asinusoidalPosition` - Inverse sine
 - `arcPosition` - Arc curve
+- `smoothStepPosition` - Smooth step function
 
-### Anchor Colors
+## How to Use
 
-Anchor colors are specified in HSL format:
-- **Hue**: 0-360 (degrees on the color wheel)
-- **Saturation**: 0-1 (0 = grayscale, 1 = full color)
-- **Lightness**: 0-1 (0 = black, 0.5 = normal, 1 = white)
+1. **Drag anchor points** around the color wheel to adjust colors
+2. **Click on the wheel** to add new anchor points  
+3. **Click a color swatch** to apply that color to your lights
+4. **Click "Apply"** to send colors to all configured lights
+5. **Save palettes** by entering a name and clicking Save
+6. **Load saved palettes** by clicking on them in the dialog
 
-Example anchor colors:
-```yaml
-anchor_colors:
-  - [0, 0.9, 0.5]      # Bright red
-  - [120, 0.9, 0.5]    # Bright green
-  - [240, 0.9, 0.5]    # Bright blue
-```
+### WLED Mode
 
-## Interactive Controls
-
-- **Drag anchor points** on the color wheel to adjust palette colors in real-time
-- **Click empty space** on the wheel to add new anchor points
-- **Click a color swatch** below the wheel to apply that color to your lights instantly
-- **Apply Palette to WLED** button sends the entire palette to WLED devices
-
-### Tips
-
-1. **Start simple**: Use 2-3 anchors for cohesive palettes
-2. **Experiment with position**: Try different position functions for varied effects
-3. **Drag to explore**: Move anchor points around the wheel to discover new color combinations
-4. **Add points interactively**: Click on the wheel to add anchors exactly where you want them
+When you have WLED entities configured:
+1. Adjust your palette colors on the wheel
+2. Click "Upload to WLED" 
+3. The entire palette uploads to your WLED device
+4. WLED automatically reboots to load the new palette
 
 ## Examples
 
-### Warm Sunset Palette
-
+### Simple Setup
 ```yaml
 type: custom:poline-card
-title: Sunset Colors
+entities:
+  - light.bedroom
+storage_state_entity: input_text.poline_card_state
+storage_palettes_entity: input_text.poline_saved_palettes
+```
+
+### WLED Strip
+```yaml
+type: custom:poline-card
+title: LED Strip
+wled_entities:
+  - light.wled_strip
+palette_size: 16
+num_points: 5
+storage_state_entity: input_text.poline_card_state
+storage_palettes_entity: input_text.poline_saved_palettes
+```
+
+### Custom Functions
+```yaml
+type: custom:poline-card
 entities:
   - light.living_room
-num_points: 5
-anchor_colors:
-  - [30, 0.9, 0.6]   # Orange
-  - [0, 0.8, 0.5]    # Red
-  - [280, 0.6, 0.3]  # Purple
-closed_loop: true
-```
-
-### Cool Ocean Palette
-
-```yaml
-type: custom:poline-card
-title: Ocean Breeze
-entity: light.bedroom
-num_points: 6
-anchor_colors:
-  - [180, 0.7, 0.6]  # Cyan
-  - [220, 0.8, 0.5]  # Blue
-  - [260, 0.6, 0.4]  # Deep blue
 position_function_x: arcPosition
 position_function_y: sinusoidalPosition
-```
-
-### WLED RGB Spectrum
-
-```yaml
-type: custom:poline-card
-title: Rainbow Palette
-wled_entity: light.led_strip
-mode: palette
-palette_size: 20
-num_points: 8
-anchor_colors:
-  - [0, 1, 0.5]      # Red
-  - [120, 1, 0.5]    # Green
-  - [240, 1, 0.5]    # Blue
+position_function_z: linearPosition
 closed_loop: true
+invert_lightness: false
+storage_state_entity: input_text.poline_card_state
+storage_palettes_entity: input_text.poline_saved_palettes
 ```
 
 ## Development
 
-### Prerequisites
-
-- Node.js 18+ and npm
-- Home Assistant instance for testing
-
 ### Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/poline-homeassistant.git
-cd poline-homeassistant
-
 # Install dependencies
 npm install
 
-# Build the project
+# Build
 npm run build
 
-# Watch for changes (development)
+# Watch mode (auto-rebuild on changes)
 npm run watch
 ```
 
-### Project Structure
+Output is in `dist/poline-card.js`.
 
-```
-poline-homeassistant/
-├── src/
-│   ├── poline-card.ts      # Main custom element
-│   └── types.ts            # TypeScript type definitions
-├── dist/
-│   └── poline-card.js      # Compiled output
-├── package.json
-├── tsconfig.json
-├── rollup.config.mjs
-├── hacs.json
-└── README.md
-```
+### Local Testing
 
-### Building
+1. Build the card: `npm run build`
+2. Copy to Home Assistant: `cp dist/poline-card.js /path/to/ha/config/www/`
+3. Add as resource (Settings → Dashboards → Resources):
+   - URL: `/local/poline-card.js`
+   - Type: JavaScript Module
+4. Hard refresh browser (Ctrl+Shift+R)
+5. Add card to dashboard
 
-The project uses Rollup to bundle TypeScript into a single JavaScript file:
+### Troubleshooting
 
+**Card doesn't appear:**
+- Check browser console (F12) for errors
+- Verify resource is loaded in Settings → Dashboards → Resources
+- Clear cache and hard refresh (Ctrl+Shift+R)
+
+**Colors not applying:**
+- Verify entity IDs are correct
+- Check lights support RGB/color mode
+- View Home Assistant logs for errors
+
+**Build errors:**
 ```bash
+rm -rf node_modules dist
+npm install
 npm run build
 ```
 
-The output will be in `dist/poline-card.js`.
-
-### Testing
-
-1. Copy `dist/poline-card.js` to your Home Assistant `config/www` folder
-2. Add the resource to your Lovelace configuration
-3. Add the card to a dashboard
-4. Test with your light entities
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
 ## Credits
 
-- **Poline Library**: Created by [Meo Dai](https://github.com/meodai) - [Poline on GitHub](https://github.com/meodai/poline)
-- Inspired by [Anatoly Zenkov's](https://anatolyzenkov.com/) color palette ideas
+- **Poline** by [Meo Dai](https://github.com/meodai) - [poline on GitHub](https://github.com/meodai/poline)
+- Inspired by Anatoly Zenkov's color palette ideas
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you find this card useful, consider:
-- ⭐ Starring the repository
-- 🐛 Reporting issues
-- 💡 Suggesting new features
-- ☕ [Buying the Poline creator a coffee](https://ko-fi.com/colorparrot)
-
-## Changelog
-
-### Version 1.0.0
-- Initial release
-- Basic color palette generation
-- Support for Home Assistant light entities
-- WLED palette integration
-- Interactive anchor point editing
-- Configurable position functions
+MIT License - see [LICENSE](LICENSE)
