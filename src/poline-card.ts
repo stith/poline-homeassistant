@@ -255,10 +255,10 @@ export class PolineCard extends LitElement {
       colors.push(rgb);
     }
 
-    // Apply to all WLED entities via direct API
-    for (const entityId of wledEntities) {
-      await this._setWledCustomPalette(entityId, colors);
-    }
+    // Apply to all WLED entities in parallel
+    await Promise.all(
+      wledEntities.map(entityId => this._setWledCustomPalette(entityId, colors))
+    );
   }
 
   private async _setWledCustomPalette(entityId: string, colors: number[][]): Promise<void> {
@@ -390,12 +390,14 @@ export class PolineCard extends LitElement {
     }
   }
 
-  private async _applyColors(): Promise<void> {
+  private _applyColors(): void {
     // Apply to regular light entities
     this._applyColorToEntity();
     
-    // Apply to WLED entities
-    await this._applyPaletteToWled();
+    // Apply to WLED entities in background (don't await to prevent UI freeze)
+    this._applyPaletteToWled().catch(error => {
+      console.error('Error applying WLED palette:', error);
+    });
   }
 
   private _openPalettesDialog(): void {
