@@ -19,7 +19,7 @@ Generate beautiful color palettes for your smart lights using [Poline](https://m
 
 1. Open HACS → Frontend
 2. Click the menu (⋮) → Custom repositories
-3. Add `https://github.com/stith/poline-homeassistant` and select "Lovelace" category
+3. Add `https://github.com/stith/poline-homeassistant` and select "Dashboard" as the type
 4. Find "Poline Color Picker Card" and click Download
 5. Restart Home Assistant
 
