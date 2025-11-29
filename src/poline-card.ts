@@ -1,4 +1,4 @@
-import { LitElement, html, css, PropertyValues } from 'lit';
+import { LitElement, html, css, PropertyValues, svg } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { Poline, positionFunctions } from 'poline';
 import type { HomeAssistant, LovelaceCardConfig } from './types';
@@ -37,7 +37,6 @@ export class PolineCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: PolineCardConfig;
   @state() private _poline?: Poline;
-  @state() private _selectedColorIndex: number = 0;
   @state() private _savedPalettes: SavedPalette[] = [];
   @state() private _showSaveDialog: boolean = false;
   @state() private _showLoadDialog: boolean = false;
@@ -73,7 +72,6 @@ export class PolineCard extends LitElement {
     if (!this.hass || !this._config) return;
 
     const state = {
-      selectedColorIndex: this._selectedColorIndex,
       invertedLightness: this._poline?.invertedLightness || false,
     };
 
@@ -90,10 +88,6 @@ export class PolineCard extends LitElement {
       const stored = localStorage.getItem(this._getStorageKey());
       if (stored) {
         const state = JSON.parse(stored);
-        
-        if (typeof state.selectedColorIndex === 'number') {
-          this._selectedColorIndex = state.selectedColorIndex;
-        }
         
         if (this._poline && typeof state.invertedLightness === 'boolean') {
           this._poline.invertedLightness = state.invertedLightness;
@@ -112,9 +106,8 @@ export class PolineCard extends LitElement {
 
     try {
       const entity = this.hass.states[this._config.storage_entity];
-      if (entity?.attributes?.palettes) {
-        const palettesData = entity.attributes.palettes as string;
-        this._savedPalettes = JSON.parse(palettesData);
+      if (entity?.state && entity.state !== 'unknown') {
+        this._savedPalettes = JSON.parse(entity.state);
       }
     } catch (e) {
       console.warn('Failed to load saved palettes:', e);
@@ -127,12 +120,10 @@ export class PolineCard extends LitElement {
     try {
       const palettesJson = JSON.stringify(this._savedPalettes);
       
-      // Use set_value service for input_text, or attributes for other helpers
-      await this.hass.callService('homeassistant', 'update_entity', {
+      // Use input_text.set_value service
+      await this.hass.callService('input_text', 'set_value', {
         entity_id: this._config.storage_entity,
-        attributes: {
-          palettes: palettesJson,
-        },
+        value: palettesJson,
       });
     } catch (e) {
       console.error('Failed to save palettes to server:', e);
@@ -187,6 +178,10 @@ export class PolineCard extends LitElement {
     if (changedProps.has('_config') && this._config) {
       this._initializePoline();
     }
+    // Reload palettes when hass becomes available or changes
+    if (changedProps.has('hass') && this.hass) {
+      this._loadSavedPalettes();
+    }
   }
 
   protected firstUpdated(): void {
@@ -217,12 +212,7 @@ export class PolineCard extends LitElement {
     }
   }
 
-  private _handleColorClick(index: number): void {
-    this._selectedColorIndex = index;
-    this._saveState();
-  }
-
-  private _applyColorToEntity(colorIndex: number): void {
+  private _applyColorToEntity(): void {
     if (!this.hass || !this._poline) return;
 
     const entity = this._config?.entity;
@@ -230,42 +220,29 @@ export class PolineCard extends LitElement {
     
     if (entities.length === 0) return;
 
-    // If single entity or single color mode, apply the selected color to all
-    if (entities.length === 1) {
-      const color = this._poline.colors[colorIndex];
+    // Distribute palette colors across all entities
+    const totalColors = this._poline.colors.length;
+    const colorIndices: number[] = [];
+    
+    // Calculate evenly distributed indices
+    for (let i = 0; i < entities.length; i++) {
+      const position = i / (entities.length - 1);
+      const index = Math.round(position * (totalColors - 1));
+      colorIndices.push(index);
+    }
+
+    // Apply colors to each entity
+    entities.forEach((entityId, i) => {
+      const color = this._poline!.colors[colorIndices[i]];
       const [h, s, l] = color as [number, number, number];
       const rgb = this._hslToRgb(h, s, l);
 
-      this.hass.callService('light', 'turn_on', {
-        entity_id: entities[0],
+      this.hass!.callService('light', 'turn_on', {
+        entity_id: entityId,
         rgb_color: rgb,
         brightness: Math.round(l * 255),
       });
-    } else {
-      // Multiple entities: distribute palette colors across them
-      const totalColors = this._poline.colors.length;
-      const colorIndices: number[] = [];
-      
-      // Calculate evenly distributed indices
-      for (let i = 0; i < entities.length; i++) {
-        const position = i / (entities.length - 1);
-        const index = Math.round(position * (totalColors - 1));
-        colorIndices.push(index);
-      }
-
-      // Apply colors to each entity
-      entities.forEach((entityId, i) => {
-        const color = this._poline!.colors[colorIndices[i]];
-        const [h, s, l] = color as [number, number, number];
-        const rgb = this._hslToRgb(h, s, l);
-
-        this.hass!.callService('light', 'turn_on', {
-          entity_id: entityId,
-          rgb_color: rgb,
-          brightness: Math.round(l * 255),
-        });
-      });
-    }
+    });
   }
 
   private async _applyPaletteToWled(): Promise<void> {
@@ -425,7 +402,7 @@ export class PolineCard extends LitElement {
 
   private async _applyColors(): Promise<void> {
     // Apply to regular light entities
-    this._applyColorToEntity(this._selectedColorIndex);
+    this._applyColorToEntity();
     
     // Apply to WLED entities
     await this._applyPaletteToWled();
@@ -478,14 +455,17 @@ export class PolineCard extends LitElement {
   private async _loadPalette(palette: SavedPalette): Promise<void> {
     if (!this._config) return;
 
-    // Update config with palette settings
-    this._config.anchor_colors = palette.anchorColors;
-    this._config.num_points = palette.numPoints;
-    this._config.position_function_x = palette.positionFunctionX;
-    this._config.position_function_y = palette.positionFunctionY;
-    this._config.position_function_z = palette.positionFunctionZ;
-    this._config.closed_loop = palette.closedLoop;
-    this._config.invert_lightness = palette.invertedLightness;
+    // Create a new config object with palette settings
+    this._config = {
+      ...this._config,
+      anchor_colors: palette.anchorColors,
+      num_points: palette.numPoints,
+      position_function_x: palette.positionFunctionX,
+      position_function_y: palette.positionFunctionY,
+      position_function_z: palette.positionFunctionZ,
+      closed_loop: palette.closedLoop,
+      invert_lightness: palette.invertedLightness,
+    };
 
     // Reinitialize poline with new settings
     this._initializePoline();
@@ -549,6 +529,47 @@ export class PolineCard extends LitElement {
     this.requestUpdate();
   }
 
+  private _getPalettePreviewColors(palette: SavedPalette): string[] {
+    // Create a temporary Poline instance to generate preview colors
+    const positionFunctionX =
+      positionFunctions[
+        palette.positionFunctionX as keyof typeof positionFunctions
+      ] || positionFunctions.sinusoidalPosition;
+    const positionFunctionY =
+      positionFunctions[
+        palette.positionFunctionY as keyof typeof positionFunctions
+      ] || positionFunctions.quadraticPosition;
+    const positionFunctionZ =
+      positionFunctions[
+        palette.positionFunctionZ as keyof typeof positionFunctions
+      ] || positionFunctions.linearPosition;
+
+    const tempPoline = new Poline({
+      anchorColors: palette.anchorColors,
+      numPoints: palette.numPoints,
+      positionFunctionX,
+      positionFunctionY,
+      positionFunctionZ,
+    });
+
+    if (palette.closedLoop !== undefined) {
+      tempPoline.closedLoop = palette.closedLoop;
+    }
+
+    if (palette.invertedLightness !== undefined) {
+      tempPoline.invertedLightness = palette.invertedLightness;
+    }
+
+    // Return a subset of colors for preview (up to 8 colors)
+    const previewCount = Math.min(8, tempPoline.colors.length);
+    const colors: string[] = [];
+    for (let i = 0; i < previewCount; i++) {
+      const index = Math.floor((i / (previewCount - 1)) * (tempPoline.colors.length - 1));
+      colors.push(tempPoline.colorsCSS[index]);
+    }
+    return colors;
+  }
+
 
 
   static styles = css`
@@ -566,52 +587,39 @@ export class PolineCard extends LitElement {
       margin-bottom: 16px;
     }
 
-    .picker-container {
+    .main-content {
       display: flex;
       justify-content: center;
       margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .picker-container {
+      flex-shrink: 0;
+      max-width: 100%;
     }
 
     poline-picker {
       width: 100%;
-      max-width: 400px;
-      height: 400px;
+      max-width: 350px;
+      height: 350px;
       --poline-picker-bg-color: var(--card-background-color, #fff);
       --poline-picker-line-color: var(--primary-text-color, #333);
     }
 
-    .palette-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 16px;
-      justify-content: center;
-    }
-
-    .color-swatch {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: all 0.2s;
-    }
-
-    .color-swatch:hover {
-      transform: scale(1.1);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    }
-
-    .color-swatch.selected {
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px var(--card-background-color);
+    .palette-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      flex-shrink: 0;
     }
 
     .controls {
       display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 16px;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
     }
 
     .button-group {
@@ -731,9 +739,28 @@ export class PolineCard extends LitElement {
       border-radius: 4px;
     }
 
-    .palette-item-name {
+    .palette-item-content {
       flex: 1;
       cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .palette-item-name {
+      font-weight: 500;
+    }
+
+    .palette-item-colors {
+      display: flex;
+      gap: 4px;
+    }
+
+    .palette-preview-swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      border: 1px solid var(--divider-color);
     }
 
     .palette-item-actions {
@@ -763,24 +790,45 @@ export class PolineCard extends LitElement {
       <ha-card>
         ${this._config.title ? html`<div class="card-header">${this._config.title}</div>` : ''}
 
-        <div class="picker-container">
-          <poline-picker interactive></poline-picker>
-        </div>
-
-        <div class="palette-container">
-          ${colors.map(
-            (color: string, index: number) => html`
-              <div
-                class="color-swatch ${index === this._selectedColorIndex ? 'selected' : ''}"
-                style="background-color: ${color}"
-                @click=${() => this._handleColorClick(index)}
-                title="Color ${index + 1}"
-              ></div>
-            `
-          )}
+        <div class="main-content">
+          <div class="picker-container">
+            <poline-picker interactive></poline-picker>
+          </div>
         </div>
 
         <div class="controls">
+          <svg class="palette-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            ${svg`
+              <circle cx="50" cy="50" r="50" fill="#ffffff" />
+              ${colors.map((color: string, index: number) => {
+                const sliceAngle = 360 / colors.length;
+                const startAngle = index * sliceAngle - 90; // Start from top
+                const endAngle = startAngle + sliceAngle;
+                
+                // Convert to radians
+                const startRad = (startAngle * Math.PI) / 180;
+                const endRad = (endAngle * Math.PI) / 180;
+                
+                // Calculate arc points
+                const x1 = 50 + 50 * Math.cos(startRad);
+                const y1 = 50 + 50 * Math.sin(startRad);
+                const x2 = 50 + 50 * Math.cos(endRad);
+                const y2 = 50 + 50 * Math.sin(endRad);
+                
+                const largeArc = sliceAngle > 180 ? 1 : 0;
+                
+                return svg`
+                  <path
+                    d="M 50 50 L ${x1} ${y1} A 50 50 0 ${largeArc} 1 ${x2} ${y2} Z"
+                    fill="${color}"
+                  >
+                    <title>Color ${index + 1}</title>
+                  </path>
+                `;
+              })}
+            `}
+          </svg>
+
           <div class="toggle-group">
             <label>
               <input
@@ -802,10 +850,6 @@ export class PolineCard extends LitElement {
                   </button>
                 `
               : ''}
-          </div>
-
-          <div class="info-text">
-            Drag anchor points • Select a color • Click Apply to update lights
           </div>
         </div>
 
@@ -852,10 +896,22 @@ export class PolineCard extends LitElement {
                               (palette) => html`
                                 <div class="palette-item">
                                   <div
-                                    class="palette-item-name"
+                                    class="palette-item-content"
                                     @click=${() => this._loadPalette(palette)}
                                   >
-                                    ${palette.name}
+                                    <div class="palette-item-name">
+                                      ${palette.name}
+                                    </div>
+                                    <div class="palette-item-colors">
+                                      ${this._getPalettePreviewColors(palette).map(
+                                        (color) => html`
+                                          <div
+                                            class="palette-preview-swatch"
+                                            style="background-color: ${color}"
+                                          ></div>
+                                        `
+                                      )}
+                                    </div>
                                   </div>
                                   <div class="palette-item-actions">
                                     <button
