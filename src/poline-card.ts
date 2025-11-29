@@ -2,6 +2,7 @@ import { LitElement, html, css, PropertyValues, svg } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { Poline, positionFunctions } from 'poline';
 import type { HomeAssistant, LovelaceCardConfig } from './types';
+import './poline-card-editor';
 
 interface PolineCardConfig extends LovelaceCardConfig {
   type: string;
@@ -53,6 +54,10 @@ export class PolineCard extends LitElement {
       num_points: 4,
       palette_size: 16,
     };
+  }
+
+  static getConfigElement(): HTMLElement {
+    return document.createElement('poline-card-editor');
   }
 
   public setConfig(config: PolineCardConfig): void {
@@ -1212,3 +1217,13 @@ declare global {
     'poline-card': PolineCard;
   }
 }
+
+// Register the card with Home Assistant
+(window as any).customCards = (window as any).customCards || [];
+(window as any).customCards.push({
+  type: 'poline-card',
+  name: 'Poline Color Picker',
+  description: 'Esoteric color palette generator for lights and WLED',
+  preview: true,
+  documentationURL: 'https://github.com/meodai/poline',
+});
