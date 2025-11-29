@@ -268,7 +268,7 @@ export class PolineCard extends LitElement {
     }
   }
 
-  private _applyPaletteToWled(): void {
+  private async _applyPaletteToWled(): Promise<void> {
     if (!this.hass || !this._poline || !this._config) return;
 
     const wledEntity = this._config.wled_entity;
@@ -288,24 +288,147 @@ export class PolineCard extends LitElement {
       colors.push(rgb);
     }
 
-    // Format for WLED: convert to hex string
-    const paletteString = colors.map((rgb) => this._rgbToHex(rgb)).join(',');
-
-    // Apply to all WLED entities
-    wledEntities.forEach((entityId) => {
-      this.hass!.callService('wled', 'preset', {
-        entity_id: entityId,
-        palette: paletteString,
-      });
-    });
+    // Apply to all WLED entities via direct API
+    for (const entityId of wledEntities) {
+      await this._setWledCustomPalette(entityId, colors);
+    }
   }
 
-  private _applyColors(): void {
+  private async _setWledCustomPalette(entityId: string, colors: number[][]): Promise<void> {
+    if (!this.hass) return;
+
+    try {
+      // Get the IP from the corresponding sensor entity
+      // Convert light.living_room_window -> sensor.living_room_window_ip
+      const sensorEntityId = entityId.replace('light.', 'sensor.') + '_ip';
+      const sensorEntity = this.hass.states[sensorEntityId];
+      
+      if (!sensorEntity) {
+        console.error(`IP sensor ${sensorEntityId} not found for ${entityId}`);
+        // Fallback: just set the first color
+        this.hass.callService('light', 'turn_on', {
+          entity_id: entityId,
+          rgb_color: colors[0],
+        });
+        return;
+      }
+
+      const ip = sensorEntity.state;
+      
+      if (!ip || ip === 'unknown' || ip === 'unavailable') {
+        console.error(`No valid IP address in ${sensorEntityId}: ${ip}`);
+        // Fallback: just set the first color
+        this.hass.callService('light', 'turn_on', {
+          entity_id: entityId,
+          rgb_color: colors[0],
+        });
+        return;
+      }
+
+      // Upload custom palette file to WLED
+      // WLED expects format: {"palette":[position1, "hexcolor1", position2, "hexcolor2", ...]}
+      // Positions are 0-255 representing gradient stops
+      const paletteArray: (number | string)[] = [];
+      
+      colors.forEach((rgb, index) => {
+        // Calculate position (0-255) evenly spaced across the palette
+        const position = Math.round((index / (colors.length - 1)) * 255);
+        const hexColor = rgb.map(c => c.toString(16).padStart(2, '0')).join('');
+        
+        paletteArray.push(position);
+        paletteArray.push(hexColor);
+      });
+      
+      const paletteData = { palette: paletteArray };
+      const paletteJson = JSON.stringify(paletteData);
+      
+      // Create multipart form data
+      const formData = new FormData();
+      const blob = new Blob([paletteJson], { type: 'application/json' });
+      formData.append('data', blob, '/palette0.json');
+
+      // Upload the custom palette using /edit endpoint
+      const uploadResponse = await fetch(`http://${ip}/edit`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`WLED upload error: ${uploadResponse.status}`);
+      }
+
+      // Reboot WLED to load the new palette
+      const rebootResponse = await fetch(`http://${ip}/win&RB`, {
+        method: 'GET',
+      });
+
+      if (!rebootResponse.ok) {
+        console.warn(`WLED reboot warning: ${rebootResponse.status}`);
+      }
+
+      // Poll for WLED to finish restarting
+      let wledReady = false;
+      const maxAttempts = 30; // 30 seconds max
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+          const pingResponse = await fetch(`http://${ip}/json/state`, {
+            method: 'GET',
+          });
+          if (pingResponse.ok) {
+            wledReady = true;
+            break;
+          }
+        } catch {
+          // WLED still rebooting, continue polling
+        }
+      }
+
+      if (!wledReady) {
+        throw new Error('WLED did not restart in time');
+      }
+
+      console.log(`WLED at ${ip} has restarted`);
+
+      // Set the segment to use custom palette 0 and Aurora effect
+      const statePayload = {
+        seg: [{
+          id: 0,
+          pal: 0, // Custom palette 0
+          fx: 38, // Aurora effect (effect ID 38)
+        }],
+        on: true
+      };
+
+      const stateResponse = await fetch(`http://${ip}/json/state`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(statePayload),
+      });
+
+      if (!stateResponse.ok) {
+        throw new Error(`WLED state error: ${stateResponse.status}`);
+      }
+
+      console.log(`Successfully applied custom palette to WLED at ${ip}`);
+    } catch (error) {
+      console.error(`Failed to set WLED palette for ${entityId}:`, error);
+      // Fallback: set first color via Home Assistant
+      this.hass.callService('light', 'turn_on', {
+        entity_id: entityId,
+        rgb_color: colors[0],
+      });
+    }
+  }
+
+  private async _applyColors(): Promise<void> {
     // Apply to regular light entities
     this._applyColorToEntity(this._selectedColorIndex);
     
     // Apply to WLED entities
-    this._applyPaletteToWled();
+    await this._applyPaletteToWled();
   }
 
   private _openSaveDialog(): void {
