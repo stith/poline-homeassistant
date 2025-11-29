@@ -1,6 +1,6 @@
 # Poline Color Picker for Home Assistant
 
-Generate beautiful color palettes for your smart lights using [Poline](https://meodai.github.io/poline/). Drag colors around an interactive wheel, save your favorite palettes, and apply them to any RGB light or WLED device.
+Generate beautiful color palettes for your smart lights using [Poline](https://meodai.github.io/poline/). Drag colors around an interactive wheel, save your favorite palettes, and apply them to any RGB light or WLED device. Begrudgingly vibe coded with [Claude](http://claude.ai). 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![HACS](https://img.shields.io/badge/HACS-compatible-green.svg)

@@ -1060,5 +1060,5 @@ customWindow.customCards.push({
   name: 'Poline Color Picker',
   description: 'Esoteric color palette generator for lights and WLED',
   preview: true,
-  documentationURL: 'https://github.com/meodai/poline',
+  documentationURL: 'https://github.com/stith/poline-homeassistant',
 });
