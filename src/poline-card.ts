@@ -6,7 +6,6 @@ import type { HomeAssistant, LovelaceCardConfig } from './types';
 interface PolineCardConfig extends LovelaceCardConfig {
   type: string;
   title?: string;
-  entity?: string;
   entities?: string[];
   num_points?: number;
   anchor_colors?: [number, number, number][];
@@ -15,7 +14,6 @@ interface PolineCardConfig extends LovelaceCardConfig {
   position_function_z?: string;
   closed_loop?: boolean;
   invert_lightness?: boolean;
-  wled_entity?: string;
   wled_entities?: string[];
   palette_size?: number;
 }
@@ -67,13 +65,19 @@ export class PolineCard extends LitElement {
   }
 
   private _saveState(): void {
-    if (!this.hass || !this._config) return;
+    if (!this.hass || !this._config || !this._poline) return;
 
     const state = {
-      invertedLightness: this._poline?.invertedLightness || false,
+      invertedLightness: this._poline.invertedLightness || false,
+      anchorColors: this._poline.anchorPoints.map(p => p.hsl),
+      numPoints: this._poline.numPoints,
+      closedLoop: this._poline.closedLoop,
+      positionFunctionX: this._config.position_function_x,
+      positionFunctionY: this._config.position_function_y,
+      positionFunctionZ: this._config.position_function_z,
     };
 
-    // Save to localStorage for cross-device sync via Home Assistant
+    // Save to localStorage for persistence
     try {
       localStorage.setItem(this._getStorageKey(), JSON.stringify(state));
     } catch (e) {
@@ -87,8 +91,50 @@ export class PolineCard extends LitElement {
       if (stored) {
         const state = JSON.parse(stored);
         
-        if (this._poline && typeof state.invertedLightness === 'boolean') {
-          this._poline.invertedLightness = state.invertedLightness;
+        if (this._poline) {
+          // Restore inverted lightness
+          if (typeof state.invertedLightness === 'boolean') {
+            this._poline.invertedLightness = state.invertedLightness;
+          }
+          
+          // Restore closed loop
+          if (typeof state.closedLoop === 'boolean') {
+            this._poline.closedLoop = state.closedLoop;
+          }
+          
+          // Restore anchor colors and regenerate palette
+          if (state.anchorColors && Array.isArray(state.anchorColors)) {
+            const positionFunctionX = state.positionFunctionX ? 
+              positionFunctions[state.positionFunctionX as keyof typeof positionFunctions] : 
+              this._poline.positionFunctionX;
+            const positionFunctionY = state.positionFunctionY ? 
+              positionFunctions[state.positionFunctionY as keyof typeof positionFunctions] : 
+              this._poline.positionFunctionY;
+            const positionFunctionZ = state.positionFunctionZ ? 
+              positionFunctions[state.positionFunctionZ as keyof typeof positionFunctions] : 
+              this._poline.positionFunctionZ;
+            
+            this._poline = new Poline({
+              anchorColors: state.anchorColors,
+              numPoints: state.numPoints || this._poline.numPoints,
+              positionFunctionX,
+              positionFunctionY,
+              positionFunctionZ,
+            });
+            
+            // Reapply inverted lightness and closed loop after recreation
+            if (typeof state.invertedLightness === 'boolean') {
+              this._poline.invertedLightness = state.invertedLightness;
+            }
+            if (typeof state.closedLoop === 'boolean') {
+              this._poline.closedLoop = state.closedLoop;
+            }
+            
+            // Update picker if it's loaded
+            if (this._picker) {
+              this._picker.setPoline(this._poline);
+            }
+          }
         }
       }
     } catch (e) {
@@ -203,11 +249,9 @@ export class PolineCard extends LitElement {
   }
 
   private _applyColorToEntity(): void {
-    if (!this.hass || !this._poline) return;
-
-    const entity = this._config?.entity;
-    const entities = this._config?.entities || (entity ? [entity] : []);
+    if (!this.hass || !this._poline || !this._config?.entities) return;
     
+    const entities = this._config.entities;
     if (entities.length === 0) return;
 
     // Distribute palette colors across all entities
@@ -236,11 +280,9 @@ export class PolineCard extends LitElement {
   }
 
   private async _applyPaletteToWled(): Promise<void> {
-    if (!this.hass || !this._poline || !this._config) return;
-
-    const wledEntity = this._config.wled_entity;
-    const wledEntities = this._config.wled_entities || (wledEntity ? [wledEntity] : []);
+    if (!this.hass || !this._poline || !this._config?.wled_entities) return;
     
+    const wledEntities = this._config.wled_entities;
     if (wledEntities.length === 0) return;
 
     const paletteSize = this._config.palette_size || 16;
@@ -391,6 +433,9 @@ export class PolineCard extends LitElement {
   }
 
   private _applyColors(): void {
+    // Save current state for persistence
+    this._saveState();
+    
     // Apply to regular light entities
     this._applyColorToEntity();
     
