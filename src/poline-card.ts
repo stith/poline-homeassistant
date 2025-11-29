@@ -16,6 +16,8 @@ interface PolineCardConfig extends LovelaceCardConfig {
   invert_lightness?: boolean;
   wled_entities?: string[];
   palette_size?: number;
+  storage_state_entity?: string;
+  storage_palettes_entity?: string;
 }
 
 interface SavedPalette {
@@ -70,11 +72,16 @@ export class PolineCard extends LitElement {
   }
 
   private _saveState(): void {
-    if (!this.hass || !this._config || !this._poline) return;
+    if (!this._poline) return;
+
+    // Round anchor colors to 2 decimal places to save space
+    const anchorColors = this._poline.anchorPoints.map(p => 
+      p.hsl.map(v => Math.round(v * 100) / 100) as [number, number, number]
+    );
 
     const state = {
       invertedLightness: this._poline.invertedLightness || false,
-      anchorColors: this._poline.anchorPoints.map(p => p.hsl),
+      anchorColors,
       numPoints: this._poline.numPoints,
       closedLoop: this._poline.closedLoop,
       positionFunctionX: this._getCurrentFunctionName('X'),
@@ -88,57 +95,85 @@ export class PolineCard extends LitElement {
     } catch (e) {
       console.warn('Failed to save poline-card state:', e);
     }
+
+    // Also save to Home Assistant entity if configured
+    if (this.hass && this._config?.storage_state_entity) {
+      const stateJson = JSON.stringify(state);
+      this.hass.callService('input_text', 'set_value', {
+        entity_id: this._config.storage_state_entity,
+        value: stateJson,
+      }).catch(e => {
+        console.error('Failed to save state to server:', e);
+      });
+    }
   }
 
   private _loadState(): void {
     try {
-      const stored = localStorage.getItem(this._getStorageKey());
-      if (stored) {
-        const state = JSON.parse(stored);
+      let state: any = null;
+
+      // Try to load from Home Assistant entity first
+      if (this.hass && this._config?.storage_state_entity) {
+        const entity = this.hass.states[this._config.storage_state_entity];
+        if (entity?.state && entity.state !== 'unknown' && entity.state !== '') {
+          try {
+            state = JSON.parse(entity.state);
+          } catch (e) {
+            console.warn('Failed to parse state from server:', e);
+          }
+        }
+      }
+
+      // Fallback to localStorage if no server state
+      if (!state) {
+        const stored = localStorage.getItem(this._getStorageKey());
+        if (stored) {
+          state = JSON.parse(stored);
+        }
+      }
+
+      if (state && this._poline) {
+        // Restore inverted lightness
+        if (typeof state.invertedLightness === 'boolean') {
+          this._poline.invertedLightness = state.invertedLightness;
+        }
         
-        if (this._poline) {
-          // Restore inverted lightness
+        // Restore closed loop
+        if (typeof state.closedLoop === 'boolean') {
+          this._poline.closedLoop = state.closedLoop;
+        }
+        
+        // Restore anchor colors and regenerate palette
+        if (state.anchorColors && Array.isArray(state.anchorColors)) {
+          const positionFunctionX = state.positionFunctionX ? 
+            positionFunctions[state.positionFunctionX as keyof typeof positionFunctions] : 
+            this._poline.positionFunctionX;
+          const positionFunctionY = state.positionFunctionY ? 
+            positionFunctions[state.positionFunctionY as keyof typeof positionFunctions] : 
+            this._poline.positionFunctionY;
+          const positionFunctionZ = state.positionFunctionZ ? 
+            positionFunctions[state.positionFunctionZ as keyof typeof positionFunctions] : 
+            this._poline.positionFunctionZ;
+          
+          this._poline = new Poline({
+            anchorColors: state.anchorColors,
+            numPoints: state.numPoints || this._poline.numPoints,
+            positionFunctionX,
+            positionFunctionY,
+            positionFunctionZ,
+          });
+          
+          // Reapply inverted lightness and closed loop after recreation
           if (typeof state.invertedLightness === 'boolean') {
             this._poline.invertedLightness = state.invertedLightness;
           }
-          
-          // Restore closed loop
           if (typeof state.closedLoop === 'boolean') {
             this._poline.closedLoop = state.closedLoop;
           }
           
-          // Restore anchor colors and regenerate palette
-          if (state.anchorColors && Array.isArray(state.anchorColors)) {
-            const positionFunctionX = state.positionFunctionX ? 
-              positionFunctions[state.positionFunctionX as keyof typeof positionFunctions] : 
-              this._poline.positionFunctionX;
-            const positionFunctionY = state.positionFunctionY ? 
-              positionFunctions[state.positionFunctionY as keyof typeof positionFunctions] : 
-              this._poline.positionFunctionY;
-            const positionFunctionZ = state.positionFunctionZ ? 
-              positionFunctions[state.positionFunctionZ as keyof typeof positionFunctions] : 
-              this._poline.positionFunctionZ;
-            
-            this._poline = new Poline({
-              anchorColors: state.anchorColors,
-              numPoints: state.numPoints || this._poline.numPoints,
-              positionFunctionX,
-              positionFunctionY,
-              positionFunctionZ,
-            });
-            
-            // Reapply inverted lightness and closed loop after recreation
-            if (typeof state.invertedLightness === 'boolean') {
-              this._poline.invertedLightness = state.invertedLightness;
-            }
-            if (typeof state.closedLoop === 'boolean') {
-              this._poline.closedLoop = state.closedLoop;
-            }
-            
-            // Update picker if it's loaded
-            if (this._picker && typeof this._picker.setPoline === 'function') {
-              this._picker.setPoline(this._poline);
-            }
+          // Update picker if it's loaded
+          if (this._picker && typeof this._picker.setPoline === 'function') {
+            this._picker.setPoline(this._poline);
           }
         }
       }
@@ -152,22 +187,51 @@ export class PolineCard extends LitElement {
 
   private async _loadSavedPalettes(): Promise<void> {
     try {
-      const stored = localStorage.getItem('poline-saved-palettes');
-      if (stored) {
-        this._savedPalettes = JSON.parse(stored);
+      let palettes: SavedPalette[] = [];
+
+      // Try to load from Home Assistant entity first
+      if (this.hass && this._config?.storage_palettes_entity) {
+        const entity = this.hass.states[this._config.storage_palettes_entity];
+        if (entity?.state && entity.state !== 'unknown' && entity.state !== '') {
+          try {
+            palettes = JSON.parse(entity.state);
+          } catch (e) {
+            console.warn('Failed to parse palettes from server:', e);
+          }
+        }
       }
+
+      // Fallback to localStorage if no server palettes
+      if (palettes.length === 0) {
+        const stored = localStorage.getItem('poline-saved-palettes');
+        if (stored) {
+          palettes = JSON.parse(stored);
+        }
+      }
+
+      this._savedPalettes = palettes;
     } catch (e) {
-      console.warn('Failed to load saved palettes from localStorage:', e);
+      console.warn('Failed to load saved palettes:', e);
     }
   }
 
-  private async _savePalettesToLocalStorage(): Promise<void> {
+  private async _savePalettesToServer(): Promise<void> {
     try {
       const palettesJson = JSON.stringify(this._savedPalettes);
+      
+      // Save to localStorage as backup
       localStorage.setItem('poline-saved-palettes', palettesJson);
+
+      // Save to Home Assistant entity if configured
+      if (this.hass && this._config?.storage_palettes_entity) {
+        await this.hass.callService('input_text', 'set_value', {
+          entity_id: this._config.storage_palettes_entity,
+          value: palettesJson,
+        });
+      }
     } catch (e) {
-      console.error('Failed to save palettes to localStorage:', e);
-      alert('Failed to save palette to localStorage');
+      console.error('Failed to save palettes:', e);
+      alert('Failed to save palette. The palette data may be too large for the configured storage entity.');
     }
   }
 
@@ -482,30 +546,42 @@ export class PolineCard extends LitElement {
       this._savedPalettes = [...this._savedPalettes, palette];
     }
 
-    await this._savePalettesToLocalStorage();
+    await this._savePalettesToServer();
     this._paletteName = '';
   }
 
   private async _loadPalette(palette: SavedPalette): Promise<void> {
-    if (!this._config) return;
+    if (!this._poline) return;
 
-    // Create a new config object with palette settings
-    this._config = {
-      ...this._config,
-      anchor_colors: palette.anchorColors,
-      num_points: palette.numPoints,
-      position_function_x: palette.positionFunctionX,
-      position_function_y: palette.positionFunctionY,
-      position_function_z: palette.positionFunctionZ,
-      closed_loop: palette.closedLoop,
-      invert_lightness: palette.invertedLightness,
-    };
+    // Directly update the poline instance with palette settings
+    const positionFunctionX = palette.positionFunctionX
+      ? positionFunctions[palette.positionFunctionX as keyof typeof positionFunctions]
+      : positionFunctions.sinusoidalPosition;
+    const positionFunctionY = palette.positionFunctionY
+      ? positionFunctions[palette.positionFunctionY as keyof typeof positionFunctions]
+      : positionFunctions.quadraticPosition;
+    const positionFunctionZ = palette.positionFunctionZ
+      ? positionFunctions[palette.positionFunctionZ as keyof typeof positionFunctions]
+      : positionFunctions.linearPosition;
 
-    // Reinitialize poline with new settings
-    this._initializePoline();
+    this._poline = new Poline({
+      anchorColors: palette.anchorColors,
+      numPoints: palette.numPoints,
+      positionFunctionX,
+      positionFunctionY,
+      positionFunctionZ,
+    });
+
+    if (palette.closedLoop !== undefined) {
+      this._poline.closedLoop = palette.closedLoop;
+    }
+
+    if (palette.invertedLightness !== undefined) {
+      this._poline.invertedLightness = palette.invertedLightness;
+    }
 
     // Update picker
-    if (this._picker && this._poline && typeof this._picker.setPoline === 'function') {
+    if (this._picker && typeof this._picker.setPoline === 'function') {
       this._picker.setPoline(this._poline);
     }
 
@@ -515,7 +591,7 @@ export class PolineCard extends LitElement {
 
   private async _deletePalette(palette: SavedPalette): Promise<void> {
     this._savedPalettes = this._savedPalettes.filter(p => p.name !== palette.name);
-    await this._savePalettesToLocalStorage();
+    await this._savePalettesToServer();
   }
 
   private _hslToRgb(h: number, s: number, l: number): [number, number, number] {
