@@ -13,6 +13,8 @@ Generate beautiful color palettes for your smart lights using [Poline](https://m
 - Send entire palettes to WLED devices
 - Configure position functions for different color distributions
 
+![poline card screenshot](./resources/screenshot.png)
+
 ## Installation
 
 ### HACS (Recommended)
