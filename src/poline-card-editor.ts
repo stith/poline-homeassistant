@@ -42,16 +42,17 @@ export class PolineCardEditor extends LitElement {
     if (!this._config || !this.hass) {
       return;
     }
-    const target = ev.target as any;
+    const target = ev.target as HTMLInputElement | HTMLSelectElement;
     const value = target.value;
+    const configValue = (target as HTMLElement & { configValue?: string }).configValue;
     
-    if (this._config[target.configValue] === value) {
+    if (!configValue || this._config[configValue as keyof PolineCardConfig] === value) {
       return;
     }
 
     const newConfig = {
       ...this._config,
-      [target.configValue]: value === '' ? undefined : value,
+      [configValue]: value === '' ? undefined : value,
     };
 
     const event = new CustomEvent('config-changed', {
@@ -66,12 +67,17 @@ export class PolineCardEditor extends LitElement {
     if (!this._config || !this.hass) {
       return;
     }
-    const target = ev.target as any;
+    const target = ev.target as HTMLInputElement;
     const value = target.checked;
+    const configValue = (target as HTMLElement & { configValue?: string }).configValue;
+
+    if (!configValue) {
+      return;
+    }
 
     const newConfig = {
       ...this._config,
-      [target.configValue]: value,
+      [configValue]: value,
     };
 
     const event = new CustomEvent('config-changed', {
@@ -86,16 +92,17 @@ export class PolineCardEditor extends LitElement {
     if (!this._config || !this.hass) {
       return;
     }
-    const target = ev.target as any;
+    const target = ev.target as HTMLInputElement;
     const value = parseInt(target.value);
+    const configValue = (target as HTMLElement & { configValue?: string }).configValue;
 
-    if (isNaN(value)) {
+    if (isNaN(value) || !configValue) {
       return;
     }
 
     const newConfig = {
       ...this._config,
-      [target.configValue]: value,
+      [configValue]: value,
     };
 
     const event = new CustomEvent('config-changed', {
@@ -150,8 +157,7 @@ export class PolineCardEditor extends LitElement {
       return;
     }
 
-    const target = ev.target as any;
-    const value = target.value;
+    const value = ev.detail?.value ?? (ev.target as HTMLInputElement)?.value ?? '';
 
     const currentList = this._config[listName] || [];
     const newList = [...currentList];
@@ -271,6 +277,26 @@ export class PolineCardEditor extends LitElement {
 
     .add-entity-button {
       margin-top: 8px;
+      background: var(--primary-color);
+      color: var(--text-primary-color);
+      border: none;
+      border-radius: 4px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s;
+      display: inline-block;
+      width: auto;
+    }
+
+    .add-entity-button:hover {
+      background: var(--primary-color);
+      opacity: 0.9;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .add-entity-button:active {
+      transform: translateY(1px);
     }
   `;
 
@@ -306,7 +332,7 @@ export class PolineCardEditor extends LitElement {
             .configValue=${'num_points'}
             @change=${this._numberChanged}
           />
-          <div class="hint">Number of color points between anchors (2-20)</div>
+          <div class="hint">Number of color points between anchors (2-20). For the most predictable results, set this to equal the number of regular lights, or to a multiple. For example, if you have 4 lights, choose 4, 8, 12, etc.</div>
         </div>
 
         <div class="section-header">Light Entities</div>
@@ -349,7 +375,7 @@ export class PolineCardEditor extends LitElement {
           >
             Add Entity
           </mwc-button>
-          <div class="hint">Light entities to control with generated colors</div>
+          <div class="hint">Light entities to control with generated colors. Each light will be assigned one color from the palette.</div>
         </div>
 
         <div class="option">
@@ -387,7 +413,7 @@ export class PolineCardEditor extends LitElement {
           >
             Add WLED Entity
           </mwc-button>
-          <div class="hint">WLED lights to upload palette to</div>
+          <div class="hint">WLED lights to upload palette to. Each WLED instance will recieve the full color palette.</div>
         </div>
 
         <div class="option">

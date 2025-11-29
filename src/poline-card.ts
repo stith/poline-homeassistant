@@ -32,6 +32,26 @@ interface SavedPalette {
   invertedLightness?: boolean;
 }
 
+interface CardState {
+  invertedLightness: boolean;
+  anchorColors: [number, number, number][];
+  numPoints: number;
+  closedLoop: boolean;
+  positionFunctionX: string;
+  positionFunctionY: string;
+  positionFunctionZ: string;
+}
+
+interface CustomCardsWindow extends Window {
+  customCards?: Array<{
+    type: string;
+    name: string;
+    description: string;
+    preview?: boolean;
+    documentationURL?: string;
+  }>;
+}
+
 @customElement('poline-card')
 export class PolineCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
@@ -39,7 +59,6 @@ export class PolineCard extends LitElement {
   @state() private _poline?: Poline;
   @state() private _savedPalettes: SavedPalette[] = [];
   @state() private _showPalettesDialog: boolean = false;
-  @state() private _showSettingsDialog: boolean = false;
   @state() private _paletteName: string = '';
   @query('poline-picker') private _picker?: HTMLElement & {
     setPoline: (poline: Poline) => void;
@@ -89,9 +108,9 @@ export class PolineCard extends LitElement {
       anchorColors,
       numPoints: this._poline.numPoints,
       closedLoop: this._poline.closedLoop,
-      positionFunctionX: this._getCurrentFunctionName('X'),
-      positionFunctionY: this._getCurrentFunctionName('Y'),
-      positionFunctionZ: this._getCurrentFunctionName('Z'),
+      positionFunctionX: this._config?.position_function_x || 'sinusoidalPosition',
+      positionFunctionY: this._config?.position_function_y || 'quadraticPosition',
+      positionFunctionZ: this._config?.position_function_z || 'linearPosition',
     };
 
     // Save to localStorage for persistence
@@ -107,7 +126,7 @@ export class PolineCard extends LitElement {
       this.hass.callService('input_text', 'set_value', {
         entity_id: this._config.storage_state_entity,
         value: stateJson,
-      }).catch(e => {
+      }).catch((e: unknown) => {
         console.error('Failed to save state to server:', e);
       });
     }
@@ -115,14 +134,14 @@ export class PolineCard extends LitElement {
 
   private _loadState(): void {
     try {
-      let state: any = null;
+      let state: CardState | null = null;
 
       // Try to load from Home Assistant entity first
       if (this.hass && this._config?.storage_state_entity) {
         const entity = this.hass.states[this._config.storage_state_entity];
         if (entity?.state && entity.state !== 'unknown' && entity.state !== '') {
           try {
-            state = JSON.parse(entity.state);
+            state = JSON.parse(entity.state) as CardState;
           } catch (e) {
             console.warn('Failed to parse state from server:', e);
           }
@@ -626,90 +645,6 @@ export class PolineCard extends LitElement {
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 
-  private _toggleInvertLightness(): void {
-    if (!this._poline) return;
-    
-    this._poline.invertedLightness = !this._poline.invertedLightness;
-    
-    // Update the picker
-    if (this._picker && typeof this._picker.setPoline === 'function') {
-      this._picker.setPoline(this._poline);
-    }
-    
-    this._saveState();
-    this.requestUpdate();
-  }
-
-  private _openSettingsDialog(): void {
-    this._showSettingsDialog = true;
-  }
-
-  private _closeSettingsDialog(): void {
-    this._showSettingsDialog = false;
-  }
-
-  private _updatePositionFunction(axis: 'X' | 'Y' | 'Z', functionName: string): void {
-    if (!this._poline) return;
-
-    const positionFunction = positionFunctions[functionName as keyof typeof positionFunctions];
-    if (!positionFunction) return;
-
-    // Update the poline instance
-    if (axis === 'X') {
-      this._poline.positionFunctionX = positionFunction;
-    } else if (axis === 'Y') {
-      this._poline.positionFunctionY = positionFunction;
-    } else if (axis === 'Z') {
-      this._poline.positionFunctionZ = positionFunction;
-    }
-
-    // Update the picker
-    if (this._picker && typeof this._picker.setPoline === 'function') {
-      this._picker.setPoline(this._poline);
-    }
-
-    this._saveState();
-    this.requestUpdate();
-  }
-
-  private _getCurrentFunctionName(axis: 'X' | 'Y' | 'Z'): string {
-    if (!this._poline) return 'sinusoidalPosition';
-
-    const currentFunction = axis === 'X' 
-      ? this._poline.positionFunctionX
-      : axis === 'Y'
-      ? this._poline.positionFunctionY
-      : this._poline.positionFunctionZ;
-
-    // Find the function name by comparing references
-    for (const [name, func] of Object.entries(positionFunctions)) {
-      if (func === currentFunction) {
-        return name;
-      }
-    }
-    return 'sinusoidalPosition';
-  }
-
-  private _getPositionFunctionOptions(currentValue: string) {
-    const functionNames = [
-      'linearPosition',
-      'exponentialPosition',
-      'quadraticPosition',
-      'cubicPosition',
-      'quarticPosition',
-      'sinusoidalPosition',
-      'asinusoidalPosition',
-      'arcPosition',
-      'smoothStepPosition',
-    ];
-
-    return functionNames.map(name => html`
-      <option value="${name}" ?selected=${name === currentValue}>
-        ${name.replace('Position', '').replace(/([A-Z])/g, ' $1').trim()}
-      </option>
-    `);
-  }
-
   private _getPalettePreviewColors(palette: SavedPalette): string[] {
     // Create a temporary Poline instance to generate preview colors
     const positionFunctionX =
@@ -903,41 +838,6 @@ export class PolineCard extends LitElement {
       font-size: 14px;
     }
 
-    .settings-section input[type="checkbox"] {
-      cursor: pointer;
-      width: 18px;
-      height: 18px;
-    }
-
-    .setting-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .setting-item label {
-      font-size: 14px;
-      font-weight: 500;
-      min-width: 80px;
-    }
-
-    .setting-item select {
-      flex: 1;
-      padding: 6px 8px;
-      border: 1px solid var(--divider-color);
-      border-radius: 4px;
-      background: var(--card-background-color);
-      color: var(--primary-text-color);
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    .setting-item select:focus {
-      outline: none;
-      border-color: var(--primary-color);
-    }
-
     .dialog-actions {
       display: flex;
       gap: 8px;
@@ -1065,13 +965,6 @@ export class PolineCard extends LitElement {
             <button class="secondary" @click=${this._openPalettesDialog}>
               Saved Palettes (${this._savedPalettes.length})
             </button>
-            <button 
-              class="compact secondary"
-              @click=${this._openSettingsDialog}
-              title="Settings"
-            >
-              ⚙
-            </button>
           </div>
         </div>
 
@@ -1148,65 +1041,6 @@ export class PolineCard extends LitElement {
               </div>
             `
           : ''}
-
-        ${this._showSettingsDialog
-          ? html`
-              <div class="dialog-overlay" @click=${this._closeSettingsDialog}>
-                <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
-                  <div class="dialog-header">Settings</div>
-                  <div class="dialog-content">
-                    <div class="settings-section">
-                      <label>
-                        <input
-                          type="checkbox"
-                          .checked=${this._poline?.invertedLightness || false}
-                          @change=${this._toggleInvertLightness}
-                        />
-                        Invert Lightness
-                      </label>
-                    </div>
-
-                    <div class="settings-section">
-                      <h4>Position Functions</h4>
-                      
-                      <div class="setting-item">
-                        <label>X Axis:</label>
-                        <select
-                          @change=${(e: Event) =>
-                            this._updatePositionFunction('X', (e.target as HTMLSelectElement).value)}
-                        >
-                          ${this._getPositionFunctionOptions(this._getCurrentFunctionName('X'))}
-                        </select>
-                      </div>
-
-                      <div class="setting-item">
-                        <label>Y Axis:</label>
-                        <select
-                          @change=${(e: Event) =>
-                            this._updatePositionFunction('Y', (e.target as HTMLSelectElement).value)}
-                        >
-                          ${this._getPositionFunctionOptions(this._getCurrentFunctionName('Y'))}
-                        </select>
-                      </div>
-
-                      <div class="setting-item">
-                        <label>Z Axis:</label>
-                        <select
-                          @change=${(e: Event) =>
-                            this._updatePositionFunction('Z', (e.target as HTMLSelectElement).value)}
-                        >
-                          ${this._getPositionFunctionOptions(this._getCurrentFunctionName('Z'))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="dialog-actions">
-                    <button class="secondary" @click=${this._closeSettingsDialog}>Close</button>
-                  </div>
-                </div>
-              </div>
-            `
-          : ''}
       </ha-card>
     `;
   }
@@ -1219,8 +1053,9 @@ declare global {
 }
 
 // Register the card with Home Assistant
-(window as any).customCards = (window as any).customCards || [];
-(window as any).customCards.push({
+const customWindow = window as CustomCardsWindow;
+customWindow.customCards = customWindow.customCards || [];
+customWindow.customCards.push({
   type: 'poline-card',
   name: 'Poline Color Picker',
   description: 'Esoteric color palette generator for lights and WLED',
