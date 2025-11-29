@@ -20,11 +20,12 @@ An interactive color palette generator for Home Assistant based on the Poline li
 ```yaml
 type: custom:poline-card
 title: Color Picker
-entity: light.bedroom_lamp
+entities:
+  - light.bedroom_lamp
 mode: single
 ```
 
-For more examples and configuration options, see the [README](https://github.com/yourusername/poline-homeassistant).
+For more examples and configuration options, see the [README](https://github.com/stith/poline-homeassistant).
 
 ## Credits
 

@@ -2,6 +2,7 @@
   "name": "poline-homeassistant",
   "version": "1.0.0",
   "description": "Poline color picker as a Home Assistant Custom Element with HACS support",
+  "repository": "https://github.com/stith/poline-homeassistant",
   "main": "dist/poline-card.js",
   "scripts": {
     "build": "rollup -c",
@@ -18,7 +19,7 @@
     "hue",
     "wled"
   ],
-  "author": "",
+  "author": "Anna Stith",
   "license": "MIT",
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
